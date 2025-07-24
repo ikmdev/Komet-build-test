@@ -9,7 +9,7 @@
         <relativePath/>
     </parent>
     <groupId>dev.ikm.komet</groupId>
-    <artifactId>komet-parent</artifactId>
+    <artifactId>komet-build-test</artifactId>
     <name>KOMET</name>
     <version>1.54.0-SNAPSHOT</version>
     <packaging>pom</packaging>
