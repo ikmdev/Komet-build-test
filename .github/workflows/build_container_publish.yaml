@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "*"
+  workflow_dispatch:
 
 jobs:
   build:
@@ -28,4 +29,4 @@ jobs:
           context: .
           file: docker/Dockerfile-komet-web
           push: true
-          tags: ${{ secrets.DOCKER_USERNAME }}/komet:${{ github.ref_name }}
+          tags: ${{ secrets.DOCKER_USERNAME }}/komet-test-version:${{ github.ref_name }}
