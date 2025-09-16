@@ -35,12 +35,18 @@ module dev.ikm.komet.kview {
     requires jdk.jfr;
     requires org.eclipse.jgit;
     requires dev.ikm.tinkar.reasoner.service;
+    requires org.eclipse.collections.api;
+    requires org.eclipse.collections.impl;
+    requires javafx.graphics;
+    requires org.apache.commons.logging;
+    requires org.slf4j;
+    requires javafx.controls;
 
     exports dev.ikm.komet.kview.state;
     exports dev.ikm.komet.kview.state.pattern;
 
-    opens dev.ikm.komet.kview.mvvm.view.details to javafx.fxml, org.carlfx.cognitive;
-    exports dev.ikm.komet.kview.mvvm.view.details;
+    opens dev.ikm.komet.kview.mvvm.view.concept to javafx.fxml, org.carlfx.cognitive;
+    exports dev.ikm.komet.kview.mvvm.view.concept;
 
     opens dev.ikm.komet.kview.mvvm.view.properties to javafx.fxml, org.carlfx.cognitive;
     exports dev.ikm.komet.kview.mvvm.view.properties;
@@ -148,7 +154,15 @@ module dev.ikm.komet.kview {
     exports dev.ikm.komet.kview.mvvm.view.confirmation;
     opens dev.ikm.komet.kview.mvvm.view.confirmation;
 
-    provides dev.ikm.komet.framework.KometNodeFactory with dev.ikm.komet.kview.mvvm.view.details.DetailsNodeFactory, dev.ikm.komet.kview.mvvm.view.properties.PropertiesNodeFactory;
+    exports dev.ikm.komet.kview.common;
+    opens dev.ikm.komet.kview.common;
+
+    exports dev.ikm.komet.kview.mvvm.view.loginauthor;
+    opens dev.ikm.komet.kview.mvvm.view.loginauthor;
+    exports dev.ikm.komet.kview.mvvm.viewmodel.stamp;
+    opens dev.ikm.komet.kview.mvvm.viewmodel.stamp to dev.ikm.komet.application, javafx.fxml, org.carlfx.cognitive;
+
+    provides dev.ikm.komet.framework.KometNodeFactory with dev.ikm.komet.kview.mvvm.view.concept.ConceptNodeFactory;
 
     provides EntityKlWindowFactory with
             dev.ikm.komet.kview.klwindows.concept.ConceptKlWindowFactory,
@@ -156,6 +170,6 @@ module dev.ikm.komet.kview {
             dev.ikm.komet.kview.klwindows.lidr.LidrKlWindowFactory,
             dev.ikm.komet.kview.klwindows.genediting.GenEditingKlWindowFactory;
 
-    uses dev.ikm.komet.framework.events.EvtBus;
+    uses dev.ikm.tinkar.events.EvtBus;
     uses EntityKlWindowFactory;
 }

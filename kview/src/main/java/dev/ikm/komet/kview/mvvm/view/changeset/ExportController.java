@@ -16,9 +16,10 @@
 package dev.ikm.komet.kview.mvvm.view.changeset;
 
 import com.jpro.webapi.WebAPI;
-import dev.ikm.komet.framework.events.EvtBus;
-import dev.ikm.komet.framework.events.EvtBusFactory;
-import dev.ikm.komet.framework.events.Subscriber;
+import dev.ikm.tinkar.entity.*;
+import dev.ikm.tinkar.events.EvtBus;
+import dev.ikm.tinkar.events.EvtBusFactory;
+import dev.ikm.tinkar.events.Subscriber;
 import dev.ikm.komet.framework.progress.ProgressHelper;
 import dev.ikm.komet.framework.view.ViewProperties;
 import dev.ikm.komet.kview.events.ExportDateTimePopOverEvent;
@@ -70,7 +71,9 @@ public class ExportController {
 
     private static final String CURRRENT_DATE = "Current Date";
 
-
+      @FXML
+    private BorderPane borderPane;
+    @FXML
     private static final String CURRENT_DATE_TIME_RANGE_FROM = "01/01/2022, 12:00 AM";
 
     @InjectViewModel
@@ -271,7 +274,7 @@ public class ExportController {
         } else {
             AlertStreams.dispatchToRoot(new UnsupportedOperationException("Export Type not supported"));
         }
-    }
+            }
 
     /**
      * Performs the export of a change set within the specified date range.
@@ -282,6 +285,7 @@ public class ExportController {
      */
     private void performChangeSetExport(final FileSavePicker fileSavePicker, final long fromDate, final long toDate) {
         fileSavePicker.setOnFileSelected(exportFile -> {
+            closeDialog();
             if (exportFile == null) {
                 LOG.warn("Export file is null");
                 AlertStreams.dispatchToRoot(new IllegalArgumentException("Export file cannot be null"));
@@ -289,24 +293,29 @@ public class ExportController {
             }
 
             ExportEntitiesToProtobufFile exportEntities = new ExportEntitiesToProtobufFile(exportFile, fromDate, toDate);
-            Future<?> exportFuture = ProgressHelper.progress(exportEntities, "Cancel Export");
-            closeDialog();
+            CompletableFuture<EntityCountSummary> exportFuture = ProgressHelper.progress(exportEntities, "Cancel Export");
 
-            return CompletableFuture.runAsync(() -> {
-                try {
-                    exportFuture.get(); // Wait for the export task to complete
+            exportFuture.handle((result, throwable) -> {
+                if (throwable != null) {
+                    LOG.error("Export to file '{}' failed", exportFile, throwable);
+                    deleteFile(exportFile);
+                } else {
                     LOG.info("Export completed successfully to file {}", exportFile);
-                } catch (CancellationException cex) {
-                    LOG.info("Export to file '{}' canceled", exportFile);
-                    deleteFile(exportFile);
-                    throw new CompletionException(cex);
-                } catch (InterruptedException | ExecutionException ex) {
-                    LOG.error("Export to file '{}' failed", exportFile);
-                    deleteFile(exportFile);
-                    throw new CompletionException(ex);
                 }
+                return result;
+            });
+            return  exportFuture.thenAccept(exportResult -> {
+                if (exportResult != null) {
+                    LOG.info("Exported Total records: {}", exportResult.conceptsCount());
+                    LOG.info("Exported      Concepts: {}", exportResult.conceptsCount());
+                    LOG.info("Exported     Patterns : {}", exportResult.patternsCount());
+                    LOG.info("Exported     Semantics: {}", exportResult.semanticsCount());
+                    LOG.info("Exported        Stamps: {}", exportResult.stampsCount());
+                                    }
             });
         });
+
+
     }
 
     private long transformStringInLocalDateTimeToEpochMillis(String localDateTimeFormat) {

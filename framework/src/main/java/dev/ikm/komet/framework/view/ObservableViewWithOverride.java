@@ -25,7 +25,11 @@ import javafx.collections.ObservableList;
 public class ObservableViewWithOverride extends ObservableViewBase {
 
     public ObservableViewWithOverride(ObservableViewBase observableViewBase) {
-        super(observableViewBase);
+        this(observableViewBase, null);
+    }
+
+    public ObservableViewWithOverride(ObservableViewBase observableViewBase, String name) {
+        super(observableViewBase, name);
         if (observableViewBase instanceof ObservableViewWithOverride) {
             throw new IllegalStateException("Cannot override an overridden Coordinate. ");
         }
@@ -36,13 +40,14 @@ public class ObservableViewWithOverride extends ObservableViewBase {
             } else {
                 this.removeListeners();
             }
-
         });
     }
 
     private void overriddenBaseChanged(ObservableValue<? extends ViewCoordinateRecord> observableValue,
                                        ViewCoordinateRecord oldValue,
                                        ViewCoordinateRecord newValue) {
+        var name = super.getName();
+
         if (this.hasOverrides()) {
             setExceptOverrides(newValue);
         } else {
@@ -62,6 +67,7 @@ public class ObservableViewWithOverride extends ObservableViewBase {
         }
     }
 
+    /// Set the value of the language coordinates to the updatedCoordinate value, but only if not overridden
     private void setLanguageCoordinatesExceptOverrides(ViewCoordinateRecord updatedCoordinate) {
         if (!languageCoordinates().isOverridden()) {
             for (int i = 0; i < languageCoordinates.size(); i++) {

@@ -16,9 +16,9 @@
 package dev.ikm.komet.kview.mvvm.view.genediting;
 
 
-import dev.ikm.komet.framework.events.EntityVersionChangeEvent;
-import dev.ikm.komet.framework.events.EvtBusFactory;
-import dev.ikm.komet.framework.events.Subscriber;
+import dev.ikm.tinkar.events.EntityVersionChangeEvent;
+import dev.ikm.tinkar.events.EvtBusFactory;
+import dev.ikm.tinkar.events.Subscriber;
 import dev.ikm.komet.framework.observable.*;
 import dev.ikm.komet.framework.view.ViewProperties;
 import dev.ikm.komet.kview.controls.Toast;
@@ -53,7 +53,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static dev.ikm.komet.framework.events.FrameworkTopics.VERSION_CHANGED_TOPIC;
+import static dev.ikm.tinkar.events.FrameworkTopics.VERSION_CHANGED_TOPIC;
 import static dev.ikm.komet.kview.events.EventTopics.SAVE_PATTERN_TOPIC;
 import static dev.ikm.komet.kview.events.genediting.GenEditingEvent.PUBLISH;
 import static dev.ikm.komet.kview.events.genediting.PropertyPanelEvent.CLOSE_PANEL;
@@ -62,8 +62,9 @@ import static dev.ikm.komet.kview.mvvm.view.journal.JournalController.toast;
 import static dev.ikm.komet.kview.mvvm.viewmodel.FormViewModel.*;
 import static dev.ikm.komet.kview.mvvm.viewmodel.GenEditingViewModel.SEMANTIC;
 import static dev.ikm.komet.kview.mvvm.viewmodel.GenEditingViewModel.WINDOW_TOPIC;
+import static dev.ikm.komet.terms.KometTerm.BLANK_CONCEPT;
 import static dev.ikm.tinkar.provider.search.Indexer.FIELD_INDEX;
-import static dev.ikm.tinkar.terms.TinkarTerm.ANONYMOUS_CONCEPT;
+import static dev.ikm.tinkar.terms.TinkarTerm.COMPONENT_FIELD;
 import static dev.ikm.tinkar.terms.TinkarTerm.IMAGE_FIELD;
 
 public class SemanticFieldsController {
@@ -122,15 +123,22 @@ public class SemanticFieldsController {
      */
     private boolean checkForEmptyFields() {
         AtomicBoolean invalid = new AtomicBoolean(false);
-        observableFields.forEach(observableField -> {
+
+        for (ObservableField<?> observableField : observableFields) {
             if (observableField.dataTypeNid() == IMAGE_FIELD.nid()) {
                 invalid.set(observableField.valueProperty().get() == null || (((byte[]) observableField.valueProperty().get()).length == 0));
+            } else if (observableField.dataTypeNid() == COMPONENT_FIELD.nid()) {
+                invalid.set(observableField.valueProperty().get() == null || observableField.valueProperty().get() == BLANK_CONCEPT);
             }
             if (!invalid.get()) {
                 invalid.set((observableField.value() == null || observableField.value().toString().isEmpty()));
             }
-        });
-        return invalid.get();
+            if (invalid.get()) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void processCommittedValues() {
@@ -252,10 +260,8 @@ public class SemanticFieldsController {
             observableFields.addAll((Collection) observableSemanticSnapshot.getLatestFields(true, false).get());
         }
         observableFields.forEach(observableField -> {
-            if (genEditingViewModel.getPropertyValue(MODE) == CREATE && observableField.value() instanceof EntityProxy entityProxy){
-                if(entityProxy.nid() == ANONYMOUS_CONCEPT.nid()){
-                    observableField.valueProperty().setValue(null);
-                }
+            if (genEditingViewModel.getPropertyValue(MODE) == CREATE && observableField.value() instanceof EntityProxy){
+                ((ObservableField<EntityProxy>)observableField).valueProperty().setValue(BLANK_CONCEPT);
             }
             // disable calling writeToData method of observable field by setting refresh flag to true.
             FieldRecord<?> fieldRecord = observableField.field();
@@ -371,6 +377,7 @@ public class SemanticFieldsController {
                        EvtBusFactory.getDefaultEvtBus().publish(genEditingViewModel.getPropertyValue(CURRENT_JOURNAL_WINDOW_TOPIC),
                                new GenEditingEvent(actionEvent.getSource(), PUBLISH, list, semantic.nid()));
 //                       EntityService.get().beginLoadPhase();
+
                        String submitMessage = "Semantic Details %s Successfully!".formatted(genEditingViewModel.getStringProperty(MODE).equals(EDIT) ? "Editing" : "Added");
                        toast()
                                .withUndoAction(undoActionEvent ->

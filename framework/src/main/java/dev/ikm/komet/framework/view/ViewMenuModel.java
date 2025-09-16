@@ -35,11 +35,12 @@ import javafx.scene.shape.Shape;
 import java.util.List;
 
 public class ViewMenuModel {
-    private final ViewProperties viewProperties;
-    private final Control baseControlToShowOverride;
-    private final Shape baseControlGraphic;
-    private final Menu coordinateMenu;
-    private final MenuButton coordinateMenuButton;
+    private ViewProperties viewProperties;
+    private ViewCalculatorWithCache viewCalculator;
+    private Control baseControlToShowOverride;
+    private Shape baseControlGraphic;
+    private Menu coordinateMenu;
+    private MenuButton coordinateMenuButton;
     private String oldFill = null;
     private final ChangeListener<ViewCoordinateRecord> viewChangedListener = this::viewCoordinateChanged;
     // whichMenu added to help with debugging
@@ -51,12 +52,27 @@ public class ViewMenuModel {
 
 
     public ViewMenuModel(ViewProperties viewProperties, Control baseControlToShowOverride, Menu coordinateMenu, String whichMenu) {
-        this.viewProperties = viewProperties;
         this.coordinateMenu = coordinateMenu;
         this.coordinateMenuButton = null;
+
+
+        initialize(viewProperties, baseControlToShowOverride, whichMenu);
+    }
+
+    public ViewMenuModel(ViewProperties viewProperties, MenuButton coordinateMenuButton, String whichMenu) {
+        this.coordinateMenu = null;
+        this.coordinateMenuButton = coordinateMenuButton;
+
+        initialize(viewProperties, coordinateMenuButton, whichMenu);
+    }
+
+    private void initialize(ViewProperties viewProperties, Control baseControlToShowOverride, String whichMenu) {
+        this.viewProperties = viewProperties;
         this.viewProperties.nodeView().addListener(this.viewChangedListener);
-        ViewCalculatorWithCache viewCalculator = ViewCalculatorWithCache.getCalculator(this.viewProperties.nodeView().getValue());
-        FxGet.pathCoordinates(viewCalculator).addListener((MapChangeListener<PublicIdStringKey, StampPathImmutable>) change -> updateCoordinateMenu());
+        this.viewCalculator = ViewCalculatorWithCache.getCalculator(this.viewProperties.nodeView().getValue());
+        FxGet.pathCoordinates(viewCalculator).addListener((MapChangeListener<PublicIdStringKey, StampPathImmutable>) change ->
+                updateCoordinateMenu()
+        );
 
         this.baseControlToShowOverride = baseControlToShowOverride;
         if (baseControlToShowOverride instanceof Labeled) {
@@ -76,36 +92,6 @@ public class ViewMenuModel {
         }
 
         updateCoordinateMenu();
-
-    }
-
-    public ViewMenuModel(ViewProperties viewProperties, MenuButton coordinateMenuButton, String whichMenu) {
-        this.viewProperties = viewProperties;
-        this.coordinateMenu = null;
-        this.coordinateMenuButton = coordinateMenuButton;
-        this.viewProperties.nodeView().addListener(this.viewChangedListener);
-        ViewCalculatorWithCache viewCalculator = ViewCalculatorWithCache.getCalculator(this.viewProperties.nodeView().getValue());
-        FxGet.pathCoordinates(viewCalculator).addListener((MapChangeListener<PublicIdStringKey, StampPathImmutable>) change -> updateCoordinateMenu());
-
-        this.baseControlToShowOverride = coordinateMenuButton;
-        if (baseControlToShowOverride instanceof Labeled) {
-            Node graphic = ((Labeled) this.baseControlToShowOverride).getGraphic();
-            if (graphic instanceof AnchorPane) {
-                Node childZero = ((AnchorPane) graphic).getChildren().get(0);
-                this.baseControlGraphic = (Shape) childZero;
-            } else {
-                baseControlGraphic = null;
-            }
-        } else {
-            this.baseControlGraphic = null;
-        }
-
-        if (whichMenu != null) {
-            this.whichMenu = whichMenu;
-        }
-
-        updateCoordinateMenu();
-
     }
 
     public void updateCoordinateMenu() {
@@ -127,21 +113,25 @@ public class ViewMenuModel {
             }
         }
 
-        //this.manifoldMenu.setTooltip();
-
         Platform.runLater(() -> {
-            ViewCalculatorWithCache viewCalculator = ViewCalculatorWithCache.getCalculator(this.viewProperties.nodeView().getValue());
+            List<MenuItem> menuItems = null;
+
             if (this.coordinateMenu != null) {
-                this.coordinateMenu.getItems().clear();
-                TinkExecutor.threadPool().execute(TaskWrapper.make(new ViewMenuTask(viewCalculator, this.viewProperties.nodeView(), whichMenu),
-                        (List<MenuItem> result) -> {
-                            this.coordinateMenu.getItems().setAll(result);
-                        }));
+                menuItems = coordinateMenu.getItems();
             } else if (coordinateMenuButton != null) {
-                this.coordinateMenuButton.getItems().clear();
-                TinkExecutor.threadPool().execute(TaskWrapper.make(new ViewMenuTask(viewCalculator, this.viewProperties.nodeView(), whichMenu),
+                menuItems = coordinateMenuButton.getItems();
+            }
+
+            if (menuItems != null) {
+                var viewMenuTask = new ViewMenuTask(viewCalculator, viewProperties.nodeView(), whichMenu);
+
+                final List<MenuItem> finalMenuItems = menuItems;
+                TinkExecutor.threadPool().execute(TaskWrapper.make(viewMenuTask,
                         (List<MenuItem> result) -> {
-                            this.coordinateMenuButton.getItems().setAll(result);
+                            Platform.runLater(() -> {
+                                finalMenuItems.clear();
+                                finalMenuItems.addAll(result);
+                            });
                         }));
             }
         });

@@ -16,9 +16,15 @@
 package dev.ikm.komet.kview.mvvm.view.genediting;
 
 import dev.ikm.komet.framework.Identicon;
-import dev.ikm.komet.framework.events.EvtBusFactory;
-import dev.ikm.komet.framework.events.EvtType;
-import dev.ikm.komet.framework.events.Subscriber;
+import dev.ikm.komet.framework.controls.TimeUtils;
+import dev.ikm.komet.kview.common.ViewCalculatorUtils;
+import dev.ikm.komet.kview.controls.StampViewControl;
+import dev.ikm.komet.kview.events.ClosePropertiesPanelEvent;
+import dev.ikm.komet.kview.events.StampEvent;
+import dev.ikm.komet.kview.mvvm.viewmodel.stamp.StampFormViewModelBase;
+import dev.ikm.tinkar.events.EvtBusFactory;
+import dev.ikm.tinkar.events.EvtType;
+import dev.ikm.tinkar.events.Subscriber;
 import dev.ikm.komet.framework.observable.ObservableEntity;
 import dev.ikm.komet.framework.observable.ObservableField;
 import dev.ikm.komet.framework.observable.ObservablePattern;
@@ -32,6 +38,8 @@ import dev.ikm.komet.framework.view.ViewProperties;
 import dev.ikm.komet.kview.controls.ComponentItem;
 import dev.ikm.komet.kview.controls.KLReadOnlyBaseControl;
 import dev.ikm.komet.kview.controls.KLReadOnlyComponentControl;
+import dev.ikm.komet.kview.controls.Toast;
+import dev.ikm.komet.kview.controls.PublicIDControl;
 import dev.ikm.komet.kview.events.genediting.GenEditingEvent;
 import dev.ikm.komet.kview.events.genediting.PropertyPanelEvent;
 import dev.ikm.komet.kview.fxutils.SlideOutTrayHelper;
@@ -39,7 +47,6 @@ import dev.ikm.komet.kview.klfields.KlFieldHelper;
 import dev.ikm.komet.kview.mvvm.model.DataModelHelper;
 import dev.ikm.komet.kview.mvvm.view.stamp.StampEditController;
 import dev.ikm.komet.kview.mvvm.viewmodel.GenEditingViewModel;
-import dev.ikm.komet.kview.mvvm.viewmodel.StampViewModel;
 import dev.ikm.tinkar.coordinate.language.calculator.LanguageCalculator;
 import dev.ikm.tinkar.coordinate.stamp.calculator.Latest;
 import dev.ikm.tinkar.coordinate.view.calculator.ViewCalculator;
@@ -52,23 +59,20 @@ import dev.ikm.tinkar.entity.PatternEntityVersion;
 import dev.ikm.tinkar.entity.PatternVersionRecord;
 import dev.ikm.tinkar.entity.SemanticEntity;
 import dev.ikm.tinkar.entity.SemanticEntityVersion;
-import dev.ikm.tinkar.entity.StampEntity;
-import dev.ikm.tinkar.terms.EntityFacade;
-import dev.ikm.tinkar.terms.PatternFacade;
-import dev.ikm.tinkar.terms.State;
-import dev.ikm.tinkar.terms.TinkarTerm;
+import dev.ikm.tinkar.entity.transaction.Transaction;
+import dev.ikm.tinkar.terms.*;
 import javafx.application.Platform;
 import javafx.beans.property.ObjectProperty;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.scene.Node;
+import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuButton;
-import javafx.scene.control.TextField;
 import javafx.scene.control.TitledPane;
 import javafx.scene.control.ToggleButton;
-import javafx.scene.control.Tooltip;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.BorderPane;
@@ -76,24 +80,17 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
-import javafx.scene.text.Text;
 import org.carlfx.cognitive.loader.Config;
 import org.carlfx.cognitive.loader.FXMLMvvmLoader;
 import org.carlfx.cognitive.loader.InjectViewModel;
 import org.carlfx.cognitive.loader.JFXNode;
 import org.carlfx.cognitive.loader.NamedVm;
-import org.carlfx.cognitive.viewmodel.ValidationViewModel;
-import org.carlfx.cognitive.viewmodel.ViewModel;
 import org.controlsfx.control.PopOver;
 import org.eclipse.collections.api.list.ImmutableList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.URL;
-import java.time.Instant;
-import java.time.ZoneOffset;
-import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -102,6 +99,8 @@ import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
+import static dev.ikm.komet.kview.events.ClosePropertiesPanelEvent.CLOSE_PROPERTIES;
+import static dev.ikm.komet.kview.events.genediting.GenEditingEvent.PUBLISH;
 import static dev.ikm.komet.kview.events.genediting.PropertyPanelEvent.CLOSE_PANEL;
 import static dev.ikm.komet.kview.events.genediting.PropertyPanelEvent.NO_SELECTION_MADE_PANEL;
 import static dev.ikm.komet.kview.events.genediting.PropertyPanelEvent.OPEN_PANEL;
@@ -116,8 +115,7 @@ import static dev.ikm.komet.kview.fxutils.ViewportHelper.clipChildren;
 import static dev.ikm.komet.kview.fxutils.window.DraggableSupport.addDraggableNodes;
 import static dev.ikm.komet.kview.fxutils.window.DraggableSupport.removeDraggableNodes;
 import static dev.ikm.komet.kview.klfields.KlFieldHelper.retrieveCommittedLatestVersion;
-import static dev.ikm.komet.kview.mvvm.model.DataModelHelper.fetchDescendentsOfConcept;
-import static dev.ikm.komet.kview.mvvm.viewmodel.DescrNameViewModel.MODULES_PROPERTY;
+import static dev.ikm.komet.kview.mvvm.view.journal.JournalController.toast;
 import static dev.ikm.komet.kview.mvvm.viewmodel.FormViewModel.CREATE;
 import static dev.ikm.komet.kview.mvvm.viewmodel.FormViewModel.CURRENT_JOURNAL_WINDOW_TOPIC;
 import static dev.ikm.komet.kview.mvvm.viewmodel.FormViewModel.EDIT;
@@ -128,15 +126,12 @@ import static dev.ikm.komet.kview.mvvm.viewmodel.GenEditingViewModel.REF_COMPONE
 import static dev.ikm.komet.kview.mvvm.viewmodel.GenEditingViewModel.SEMANTIC;
 import static dev.ikm.komet.kview.mvvm.viewmodel.GenEditingViewModel.STAMP_VIEW_MODEL;
 import static dev.ikm.komet.kview.mvvm.viewmodel.GenEditingViewModel.WINDOW_TOPIC;
-import static dev.ikm.komet.kview.mvvm.viewmodel.StampViewModel.PATHS_PROPERTY;
-import static dev.ikm.tinkar.coordinate.stamp.StampFields.AUTHOR;
-import static dev.ikm.tinkar.coordinate.stamp.StampFields.MODULE;
-import static dev.ikm.tinkar.coordinate.stamp.StampFields.PATH;
-import static dev.ikm.tinkar.coordinate.stamp.StampFields.STATUS;
-import static dev.ikm.tinkar.coordinate.stamp.StampFields.TIME;
-import static dev.ikm.tinkar.terms.State.ACTIVE;
-import static dev.ikm.tinkar.terms.TinkarTerm.DEVELOPMENT_MODULE;
-import static dev.ikm.tinkar.terms.TinkarTerm.DEVELOPMENT_PATH;
+import static dev.ikm.komet.kview.mvvm.viewmodel.stamp.StampFormViewModelBase.Properties.AUTHOR;
+import static dev.ikm.komet.kview.mvvm.viewmodel.stamp.StampFormViewModelBase.Properties.IS_CONFIRMED_OR_SUBMITTED;
+import static dev.ikm.komet.kview.mvvm.viewmodel.stamp.StampFormViewModelBase.Properties.MODULE;
+import static dev.ikm.komet.kview.mvvm.viewmodel.stamp.StampFormViewModelBase.Properties.PATH;
+import static dev.ikm.komet.kview.mvvm.viewmodel.stamp.StampFormViewModelBase.Properties.STATUS;
+import static dev.ikm.komet.kview.mvvm.viewmodel.stamp.StampFormViewModelBase.Properties.TIME;
 
 public class GenEditingDetailsController {
 
@@ -179,16 +174,7 @@ public class GenEditingDetailsController {
     private Label semanticDescriptionLabel;
 
     @FXML
-    private Text lastUpdatedText;
-
-    @FXML
-    private Text moduleText;
-
-    @FXML
-    private Text pathText;
-
-    @FXML
-    private Text statusText;
+    private StampViewControl stampViewControl;
 
     @FXML
     private TitledPane referenceComponentTitledPane;
@@ -204,10 +190,10 @@ public class GenEditingDetailsController {
     private BorderPane propertiesBorderPane;
 
     @FXML
-    private Text semanticMeaningText;
+    private Label semanticMeaningText;
 
     @FXML
-    private Text semanticPurposeText;
+    private Label semanticPurposeText;
 
     @FXML
     private Button addReferenceButton;
@@ -228,13 +214,7 @@ public class GenEditingDetailsController {
     private ImageView identiconImageView;
 
     @FXML
-    private TextField uuidTextFieldLabel;
-
-    @FXML
-    private Tooltip identifierTooltip;
-
-    @InjectViewModel
-    private StampViewModel stampViewModel;
+    private PublicIDControl identifierControl;
 
     @InjectViewModel
     private GenEditingViewModel genEditingViewModel;
@@ -253,15 +233,20 @@ public class GenEditingDetailsController {
 
     private Latest<SemanticEntityVersion> semanticEntityVersionLatest;
 
-    ObservableSemantic observableSemantic;
+    private ObservableSemantic observableSemantic;
 
-    ObservableSemanticSnapshot observableSemanticSnapshot;
+    private ObservableSemanticSnapshot observableSemanticSnapshot;
+
+    private boolean isUpdatingStampSelection = false;
+
+    private Subscriber<ClosePropertiesPanelEvent> closePropertiesPanelEventSubscriber;
 
     public GenEditingDetailsController() {
     }
 
     @FXML
     private void initialize() {
+        stampViewControl.selectedProperty().subscribe(this::onStampSelectionChanged);
 
         ObjectProperty<EntityFacade> refComponent = genEditingViewModel.getObjectProperty(REF_COMPONENT);
         //Enable edit fields button if refComponent is NOT null else disable it.
@@ -275,15 +260,12 @@ public class GenEditingDetailsController {
         setupProperties();
         //Populate the Title Pattern meaning purpose
         setupSemanticForPatternInfo();
-        setupStampPopupOptions();
         setupFilterCoordinatesMenu();
 
         //Populate readonly reference component.
         setupReferenceComponentUI();
         //Populate readonly semantic details
         setupSemanticDetails();
-        // update stamp UI
-        updateUIStamp(getStampViewModel());
 
         // Setup window dragging support with explicit draggable nodes
         addDraggableNodes(detailsOuterBorderPane, tabHeader, conceptHeaderControlToolBarHbox);
@@ -293,11 +275,68 @@ public class GenEditingDetailsController {
             updateDraggableNodesForPropertiesPanel(true);
         }
 
-        setupIdenticon(refComponent);
-        setupDisplayUUID();
+        updateIdenticon(refComponent);
+        updateDisplayUUID();
+
+        genEditingViewModel.getProperty(STAMP_VIEW_MODEL).bind(propertiesController.stampFormViewModelProperty());
+
+        genEditingViewModel.getProperty(SEMANTIC).subscribe(newSemantic -> {
+            propertiesController.updateModel((EntityFacade) newSemantic);
+            updateUIStamp(propertiesController.getStampFormViewModel());
+
+            // update the identicon
+            updateIdenticon(refComponent);
+
+            // update the display UUID
+            updateDisplayUUID();
+        });
+
+        genEditingViewModel.getProperty(MODE).subscribe(newMode -> {
+            StampFormViewModelBase stampFormViewModel = propertiesController.getStampFormViewModel();
+
+            if (newMode.equals(EDIT)) {
+                updateUIStamp(propertiesController.getStampFormViewModel());
+                stampFormViewModel.getBooleanProperty(IS_CONFIRMED_OR_SUBMITTED).subscribe(isSubmitted -> {
+                    if (isSubmitted) {
+                        updateUIStamp(propertiesController.getStampFormViewModel());
+                    }
+                });
+            } else if(newMode.equals(CREATE)) {
+                stampFormViewModel.getBooleanProperty(IS_CONFIRMED_OR_SUBMITTED).subscribe(isConfirmed -> {
+                    if (isConfirmed) {
+                        updateUIStamp(propertiesController.getStampFormViewModel());
+                    }
+                });
+            }
+        });
+
+        // if the user clicks the Close Properties Button from the Edit Descriptions panel
+        // in that state, the properties bump out will be slid out, therefore firing will perform a slide in
+        closePropertiesPanelEventSubscriber = evt -> propertiesToggleButton.fire();
+        EvtBusFactory.getDefaultEvtBus().subscribe(genEditingViewModel.getPropertyValue(WINDOW_TOPIC), ClosePropertiesPanelEvent.class, closePropertiesPanelEventSubscriber);
     }
 
-    private void setupDisplayUUID() {
+    private void onStampSelectionChanged() {
+        if (isUpdatingStampSelection) {
+            return;
+        }
+
+        if (stampViewControl.isSelected()) {
+            if (!propertiesToggleButton.isSelected()) {
+                propertiesToggleButton.fire();
+            }
+
+            if (CREATE.equals(genEditingViewModel.getPropertyValue(MODE))) {
+                EvtBusFactory.getDefaultEvtBus().publish(genEditingViewModel.getPropertyValue(WINDOW_TOPIC), new StampEvent(stampViewControl, StampEvent.CREATE_STAMP));
+            } else if (EDIT.equals(genEditingViewModel.getPropertyValue(MODE))) {
+                EvtBusFactory.getDefaultEvtBus().publish(genEditingViewModel.getPropertyValue(WINDOW_TOPIC), new StampEvent(stampViewControl, StampEvent.ADD_STAMP));
+            }
+        } else {
+            EvtBusFactory.getDefaultEvtBus().publish(genEditingViewModel.getPropertyValue(WINDOW_TOPIC), new ClosePropertiesPanelEvent(stampViewControl, CLOSE_PROPERTIES));
+        }
+    }
+
+    private void updateDisplayUUID() {
         EntityFacade semanticComponent = genEditingViewModel.getPropertyValue(SEMANTIC);
         if (semanticComponent == null) {
             return;
@@ -309,11 +348,10 @@ public class GenEditingDetailsController {
         idList.addAll(DataModelHelper.getIdsToAppend(genEditingViewModel.getViewProperties().calculator(), semanticComponent.toProxy()));
         String idString = String.join(", ", idList);
 
-        uuidTextFieldLabel.setText(idString);
-        identifierTooltip.setText(idString);
+        identifierControl.setPublicId(idString);
     }
 
-    private void setupIdenticon(ObjectProperty<EntityFacade> refComponent) {
+    private void updateIdenticon(ObjectProperty<EntityFacade> refComponent) {
         if (refComponent.isNotNull().get()) {
             EntityFacade semantic = genEditingViewModel.getPropertyValue(SEMANTIC);
 
@@ -336,13 +374,6 @@ public class GenEditingDetailsController {
             // Set the mode to Create
             genEditingViewModel.setPropertyValue(MODE, CREATE);
 
-            // Set default STAMP values to load
-            stampViewModel.setPropertyValue(STATUS, ACTIVE)
-                    .setPropertyValue(MODULE, Entity.getFast(DEVELOPMENT_MODULE.nid()))
-                    .setPropertyValue(PATH, Entity.getFast(DEVELOPMENT_PATH.nid()))
-            ;
-            stampViewModel.save(true);
-
             // Set empty Semantic Details using pattern fields
             PatternFacade patternFacade = (PatternFacade) genEditingViewModel.getProperty(PATTERN).getValue();
             PatternVersionRecord patternVersionRecord = (PatternVersionRecord) getViewProperties().calculator().latest(patternFacade).get();
@@ -357,16 +388,16 @@ public class GenEditingDetailsController {
             //retrieve latest committed semanticVersion
             semanticEntityVersionLatest = retrieveCommittedLatestVersion(observableSemanticSnapshot);
             //Set and Update STAMP values
-            semanticEntityVersionLatest.ifPresent(semanticEntityVersion -> {
-                StampEntity stampEntity = semanticEntityVersion.stamp();
-                stampViewModel.setPropertyValue(STATUS, stampEntity.state())
-                        .setPropertyValue(TIME, stampEntity.time())
-                        .setPropertyValue(AUTHOR, stampEntity.author())
-                        .setPropertyValue(MODULE, stampEntity.module())
-                        .setPropertyValue(PATH, stampEntity.path())
-                ;
-                stampViewModel.save(true);
-            });
+//            semanticEntityVersionLatest.ifPresent(semanticEntityVersion -> {
+//                StampEntity stampEntity = semanticEntityVersion.stamp();
+//                stampViewModel.setPropertyValue(STATUS, stampEntity.state())
+//                        .setPropertyValue(TIME, stampEntity.time())
+//                        .setPropertyValue(AUTHOR, stampEntity.author())
+//                        .setPropertyValue(MODULE, stampEntity.module())
+//                        .setPropertyValue(PATH, stampEntity.path())
+//                ;
+//                stampViewModel.save(true);
+//            });
             // Populate the Semantic Details
             populateSemanticDetails();
         }
@@ -378,7 +409,7 @@ public class GenEditingDetailsController {
                 // If the window is in creation mode ignore the refresh event
                 return;
             }
-
+            // TODO update identicon and identifier fields.
             EntityFacade finalSemantic = semanticProperty.get();
             if (evt.getEventType() == GenEditingEvent.PUBLISH
                     && evt.getNid() == finalSemantic.nid()) {
@@ -395,6 +426,12 @@ public class GenEditingDetailsController {
                     populateSemanticDetails();
                     // change the mode from CREATE to EDIT
                     genEditingViewModel.setPropertyValue(MODE, EDIT);
+
+                    // Update STAMP control and STAMP form
+                    StampFormViewModelBase stampFormViewModelBase = propertiesController.getStampFormViewModel();
+                    stampFormViewModelBase.update(semanticEntityVersionLatest.get().entity(),
+                            genEditingViewModel.getPropertyValue(WINDOW_TOPIC), genEditingViewModel.getViewProperties());
+                    updateUIStamp(stampFormViewModelBase);
                 }
 
                 // Update read-only field values
@@ -420,16 +457,16 @@ public class GenEditingDetailsController {
             semanticEntityVersionLatest = retrieveCommittedLatestVersion(observableSemanticSnapshot);
             //Set and Update STAMP values
             semanticEntityVersionLatest.ifPresent(semanticEntityVersion -> {
-                StampEntity stampEntity = semanticEntityVersion.stamp();
-                stampViewModel.setPropertyValue(STATUS, stampEntity.state())
-                        .setPropertyValue(TIME, stampEntity.time())
-                        .setPropertyValue(AUTHOR, stampEntity.author())
-                        .setPropertyValue(MODULE, stampEntity.module())
-                        .setPropertyValue(PATH, stampEntity.path())
-                ;
-                stampViewModel.save(true);
+//                StampEntity stampEntity = semanticEntityVersion.stamp();
+//                stampViewModel.setPropertyValue(STATUS, stampEntity.state())
+//                        .setPropertyValue(TIME, stampEntity.time())
+//                        .setPropertyValue(AUTHOR, stampEntity.author())
+//                        .setPropertyValue(MODULE, stampEntity.module())
+//                        .setPropertyValue(PATH, stampEntity.path())
+//                ;
+//                stampViewModel.save(true);
             });
-            updateUIStamp(stampViewModel);
+            updateUIStamp(propertiesController.getStampFormViewModel());
         };
         subscriberList.add(refreshSubscriber);
         EvtBusFactory.getDefaultEvtBus().subscribe(genEditingViewModel.getPropertyValue(CURRENT_JOURNAL_WINDOW_TOPIC),
@@ -443,7 +480,6 @@ public class GenEditingDetailsController {
         ObservablePatternSnapshot observablePatternSnapshot = observablePattern.getSnapshot(getViewProperties().calculator());
         ObservablePatternVersion observablePatternVersion = observablePatternSnapshot.getLatestVersion().get();
         PatternEntityVersion patternEntityVersion = observablePatternVersion.getVersionRecord();
-        //            patternEntityVersionLatest.ifPresent(patternEntityVersion -> {
         String meaning = languageCalculator.getDescriptionText(patternEntityVersion.semanticMeaningNid()).orElse("No Description");
         String purpose = languageCalculator.getDescriptionText(patternEntityVersion.semanticPurposeNid()).orElse("No Description");
         semanticMeaningText.setText(meaning);
@@ -451,7 +487,16 @@ public class GenEditingDetailsController {
         String patternFQN = getViewProperties().calculator().languageCalculator()
                 .getFullyQualifiedDescriptionTextWithFallbackOrNid(patternEntityVersion.nid());
         semanticDescriptionLabel.setText("Semantic for %s".formatted(patternFQN));
-        semanticTitleText.setText("%s of component for %s in %s".formatted(meaning, purpose, patternFQN));
+
+        ObjectProperty<EntityFacade> refComponentProp = genEditingViewModel.getProperty(REF_COMPONENT);
+        if(refComponentProp != null){
+            EntityFacade refComponent = refComponentProp.get();
+            if(refComponent != null) {
+                String refComponentTitle = getViewProperties().calculator().languageCalculator().getDescriptionText(refComponent.nid()).get();
+                //TODO in the future we can internationalize the word "in" (and other labels and text) for the preferred language
+                semanticTitleText.setText(refComponentTitle + " in " + patternFQN);
+            }
+        }
     }
 
     //TODO revisit and optimize this method.
@@ -503,44 +548,37 @@ public class GenEditingDetailsController {
         }
     }
 
-    /**
-     * Upper right button that allows user to edit stamp popup
-     *
-     */
-    private void setupStampPopupOptions() {
-        //initialize stampsViewModel with basic data.
-        stampViewModel.setPropertyValue(PATHS_PROPERTY, fetchDescendentsOfConcept(getViewProperties(), TinkarTerm.PATH.publicId()), true)
-                .setPropertyValue(MODULES_PROPERTY, fetchDescendentsOfConcept(getViewProperties(), TinkarTerm.MODULE.publicId()), true);
-    }
+    private void updateUIStamp(StampFormViewModelBase stampFormViewModel) {
 
-    private void updateUIStamp(ViewModel stampViewModel) {
-        updateTimeText(stampViewModel.getValue(TIME));
-        ConceptEntity moduleEntity = stampViewModel.getValue(MODULE);
+        // -- Status
+        State status = stampFormViewModel.getValue(STATUS);
+        stampViewControl.setStatus(status == null? "" : ViewCalculatorUtils.getDescriptionTextWithFallbackOrNid(status, getViewProperties()));
+
+        // -- Time
+        updateTimeText(stampFormViewModel.getValue(TIME));
+
+        // -- Author
+        EntityFacade author = stampFormViewModel.getValue(AUTHOR);
+        stampViewControl.setAuthor(author == null? "" : ViewCalculatorUtils.getDescriptionTextWithFallbackOrNid(author, getViewProperties()));
+
+        // -- Module
+        ConceptEntity moduleEntity = stampFormViewModel.getValue(MODULE);
         if (moduleEntity == null) {
             LOG.warn("Must select a valid module for Stamp.");
             return;
         }
-        moduleText.setText(moduleEntity.description());
-        ConceptEntity pathEntity = stampViewModel.getValue(PATH);
-        pathText.setText(pathEntity.description());
-        State status = stampViewModel.getValue(STATUS);
-        statusText.setText(status.name());
-        genEditingViewModel.setPropertyValue(STAMP_VIEW_MODEL, stampViewModel);
-    }
+        stampViewControl.setModule(ViewCalculatorUtils.getDescriptionTextWithFallbackOrNid(moduleEntity, getViewProperties()));
 
-    public ValidationViewModel getStampViewModel() {
-        return stampViewModel;
+        // -- Path
+        ConceptEntity pathEntity = stampFormViewModel.getValue(PATH);
+        stampViewControl.setPath(pathEntity == null? "" : ViewCalculatorUtils.getDescriptionTextWithFallbackOrNid(pathEntity, getViewProperties()));
     }
 
     private void updateTimeText(Long time) {
         if (genEditingViewModel.getPropertyValue(MODE) == CREATE) {
-            lastUpdatedText.setText("");
+            stampViewControl.setLastUpdated("Uncommitted");
         } else {
-            DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MMM-dd HH:mm:ss");
-            Instant stampInstance = Instant.ofEpochSecond(time / 1000);
-            ZonedDateTime stampTime = ZonedDateTime.ofInstant(stampInstance, ZoneOffset.UTC);
-            String lastUpdated = DATE_TIME_FORMATTER.format(stampTime);
-            lastUpdatedText.setText(lastUpdated);
+            stampViewControl.setLastUpdated(TimeUtils.toDateString(time));
         }
     }
 
@@ -594,14 +632,59 @@ public class GenEditingDetailsController {
             if (evt.getEventType() == GenEditingEvent.CONFIRM_REFERENCE_COMPONENT) {
                 ObjectProperty<EntityFacade> newRefComponentProp = genEditingViewModel.getProperty(REF_COMPONENT);
                 updateRefComponentInfo.accept(newRefComponentProp.get());
-                //Enable disable pencil icons
-                editFieldsButton.setDisable(newRefComponentProp.isNull().get());
-                addReferenceButton.setDisable(newRefComponentProp.isNotNull().get());
+
+                // If the Pattern has no field definitions, then commit the Semantic automatically
+                if (genEditingViewModel.getObjectProperty(PATTERN).isNotNull().get()) {
+                    Entity<EntityVersion> patternEntity = Entity.getFast(genEditingViewModel.getPropertyValue(PATTERN));
+                    PatternEntityVersion latestPatternVersion = (PatternEntityVersion) genEditingViewModel.getViewProperties().calculator()
+                            .latest(patternEntity)
+                            .orElse(patternEntity.versions().getAny());
+                    if (latestPatternVersion.fieldDefinitions().isEmpty()) {
+                        submitSemanticWithEmptyFields();
+                        editFieldsButton.setDisable(true);
+                    } else {
+                        editFieldsButton.setDisable(newRefComponentProp.isNull().get());
+                    }
+                    addReferenceButton.setDisable(newRefComponentProp.isNotNull().get());
+                }
             }
         };
         subscriberList.add(refComponentSubscriber);
         EvtBusFactory.getDefaultEvtBus().subscribe(genEditingViewModel.getPropertyValue(WINDOW_TOPIC),
                 GenEditingEvent.class, refComponentSubscriber);
+    }
+
+    private void submitSemanticWithEmptyFields() {
+        EntityFacade semantic = genEditingViewModel.getPropertyValue(SEMANTIC);
+
+        Latest<SemanticEntityVersion> semanticEntityVersionLatest = getViewProperties().calculator().stampCalculator().latest(semantic.nid());
+        semanticEntityVersionLatest.ifPresent(semanticEntityVersion -> {
+            Transaction.forVersion(semanticEntityVersion).ifPresentOrElse(transaction -> {
+                transaction.commit();
+                // EventBus implementation changes to refresh the details area if commit successful
+                EvtBusFactory.getDefaultEvtBus().publish(genEditingViewModel.getPropertyValue(CURRENT_JOURNAL_WINDOW_TOPIC),
+                        new GenEditingEvent(genEditingViewModel.getPropertyValue(WINDOW_TOPIC), PUBLISH, semanticEntityVersion.fieldValues().toList(), semantic.nid()));
+                String submitMessage = "Semantic Details %s Successfully!".formatted(genEditingViewModel.getStringProperty(MODE).equals(EDIT) ? "Editing" : "Added");
+                Platform.runLater(() -> {
+                    observableSemantic = ObservableEntity.get(semantic.nid());
+                    observableSemanticSnapshot = observableSemantic.getSnapshot(getViewProperties().calculator());
+                    toast()
+                            .withUndoAction(undoActionEvent ->
+                                    LOG.info("undo called")
+                            )
+                            .show(
+                                    Toast.Status.SUCCESS,
+                                    submitMessage
+                            );
+                });
+            }, () -> {
+                //TODO this is a temp alert / workaround till we figure how to reload transactions across multiple restarts of app.
+                LOG.error("Unable to commit: Transaction for the given version does not exist.");
+                Alert alert = new Alert(Alert.AlertType.ERROR, "Transaction for current changes does not exist.", ButtonType.OK);
+                alert.setHeaderText("Unable to Commit transaction.");
+                alert.showAndWait();
+            });
+        });
     }
 
     /**
@@ -750,55 +833,6 @@ public class GenEditingDetailsController {
         // TODO: perform reasoner
     }
 
-    @FXML
-    public void popupStampEdit(ActionEvent event) {
-        if (stampEdit != null && stampEditController != null) {
-            // refresh modules
-            stampViewModel.getObservableList(StampViewModel.MODULES_PROPERTY).clear();
-            stampViewModel.getObservableList(StampViewModel.MODULES_PROPERTY).addAll(fetchDescendentsOfConcept(getViewProperties(), TinkarTerm.MODULE.publicId()));
-
-            // refresh path
-            stampViewModel.getObservableList(PATHS_PROPERTY).clear();
-            stampViewModel.getObservableList(PATHS_PROPERTY).addAll(fetchDescendentsOfConcept(getViewProperties(), TinkarTerm.PATH.publicId()));
-
-            stampEdit.show((Node) event.getSource());
-            stampEditController.selectActiveStatusToggle();
-            return;
-        }
-
-        // The stampViewModel is already created for the PatternDetailsController when instantiated
-        // inside the JournalController
-        // Inject Stamp view model into form.
-        Config stampConfig = new Config(StampEditController.class.getResource("stamp-edit.fxml"));
-        stampConfig.addNamedViewModel(new NamedVm("stampViewModel", getStampViewModel()));
-        JFXNode<Pane, StampEditController> stampJFXNode = FXMLMvvmLoader.make(stampConfig);
-
-        // for now, we are in create mode, but in the future we will check to see if we are in EDIT mode
-
-        Pane editStampPane = stampJFXNode.node();
-        PopOver popOver = new PopOver(editStampPane);
-        popOver.getStyleClass().add("filter-menu-popup");
-        StampEditController stampEditController = stampJFXNode.controller();
-
-        stampEditController.updateModel(getViewProperties());
-
-        // default the status=Active, disable inactive
-        stampEditController.selectActiveStatusToggle();
-
-        popOver.setOnHidden(windowEvent -> {
-            // set Stamp info into Details form
-            getStampViewModel().save();
-            genEditingViewModel.save();
-            updateUIStamp(getStampViewModel());
-        });
-
-        popOver.show((Node) event.getSource());
-
-        // store and use later.
-        stampEdit = popOver;
-        this.stampEditController = stampEditController;
-    }
-
     /**
      * When user clicks on the pencil icon to reveal the dynamic edit (KlFields) fields.
      *
@@ -824,6 +858,10 @@ public class GenEditingDetailsController {
         EvtType<PropertyPanelEvent> eventEvtType = propertyToggle.isSelected() ? OPEN_PANEL : CLOSE_PANEL;
 
         updateDraggableNodesForPropertiesPanel(propertyToggle.isSelected());
+
+        isUpdatingStampSelection = true;
+        stampViewControl.setSelected(propertyToggle.isSelected());
+        isUpdatingStampSelection = false;
 
         EvtBusFactory.getDefaultEvtBus().publish(genEditingViewModel.getPropertyValue(WINDOW_TOPIC), new PropertyPanelEvent(propertyToggle, eventEvtType));
     }
@@ -888,5 +926,9 @@ public class GenEditingDetailsController {
         }
 
         updateDraggableNodesForPropertiesPanel(isOpen);
+    }
+
+    public PropertiesController getPropertiesController() {
+        return propertiesController;
     }
 }

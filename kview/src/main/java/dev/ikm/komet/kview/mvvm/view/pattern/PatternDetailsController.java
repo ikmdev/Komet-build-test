@@ -16,7 +16,112 @@
 package dev.ikm.komet.kview.mvvm.view.pattern;
 
 
+import dev.ikm.komet.framework.Identicon;
+import dev.ikm.komet.framework.dnd.DragImageMaker;
+import dev.ikm.komet.framework.dnd.KometClipboard;
+import dev.ikm.komet.framework.view.ViewMenuModel;
+import dev.ikm.komet.framework.view.ViewProperties;
+import dev.ikm.komet.kview.common.ViewCalculatorUtils;
+import dev.ikm.komet.kview.controls.KometIcon;
+import dev.ikm.komet.kview.controls.PublicIDListControl;
+import dev.ikm.komet.kview.controls.StampViewControl;
+import dev.ikm.komet.kview.events.ClosePropertiesPanelEvent;
+import dev.ikm.komet.kview.events.StampEvent;
+import dev.ikm.komet.kview.events.genediting.MakeGenEditingWindowEvent;
+import dev.ikm.komet.kview.events.pattern.MakePatternWindowEvent;
+import dev.ikm.komet.kview.events.pattern.PatternDefinitionEvent;
+import dev.ikm.komet.kview.events.pattern.PatternDescriptionEvent;
+import dev.ikm.komet.kview.events.pattern.PatternFieldsPanelEvent;
+import dev.ikm.komet.kview.events.pattern.PatternSavedEvent;
+import dev.ikm.komet.kview.events.pattern.PropertyPanelEvent;
+import dev.ikm.komet.kview.events.pattern.ShowPatternFormInBumpOutEvent;
+import dev.ikm.komet.kview.fxutils.IconsHelper;
+import dev.ikm.komet.kview.fxutils.MenuHelper;
+import dev.ikm.komet.kview.fxutils.SlideOutTrayHelper;
+import dev.ikm.komet.kview.mvvm.model.DescrName;
+import dev.ikm.komet.kview.mvvm.model.DragAndDropInfo;
+import dev.ikm.komet.kview.mvvm.model.DragAndDropType;
+import dev.ikm.komet.kview.mvvm.model.PatternDefinition;
+import dev.ikm.komet.kview.mvvm.model.PatternField;
+import dev.ikm.komet.kview.mvvm.view.journal.VerticallyFilledPane;
+import dev.ikm.komet.kview.mvvm.viewmodel.PatternViewModel;
+import dev.ikm.komet.kview.mvvm.viewmodel.stamp.StampFormViewModelBase;
+import dev.ikm.tinkar.coordinate.stamp.calculator.Latest;
+import dev.ikm.tinkar.coordinate.view.calculator.ViewCalculator;
+import dev.ikm.tinkar.entity.ConceptEntity;
+import dev.ikm.tinkar.entity.Entity;
+import dev.ikm.tinkar.entity.EntityVersion;
+import dev.ikm.tinkar.events.EvtBusFactory;
+import dev.ikm.tinkar.events.EvtType;
+import dev.ikm.tinkar.events.Subscriber;
+import dev.ikm.tinkar.terms.ConceptFacade;
+import dev.ikm.tinkar.terms.EntityFacade;
+import dev.ikm.tinkar.terms.PatternFacade;
+import dev.ikm.tinkar.terms.SemanticFacade;
+import dev.ikm.tinkar.terms.State;
+import javafx.beans.binding.Bindings;
+import javafx.beans.binding.BooleanBinding;
+import javafx.beans.property.BooleanProperty;
+import javafx.beans.property.ObjectProperty;
+import javafx.beans.property.SimpleStringProperty;
+import javafx.collections.ListChangeListener;
+import javafx.collections.ObservableList;
+import javafx.event.ActionEvent;
+import javafx.event.EventHandler;
+import javafx.fxml.FXML;
+import javafx.geometry.Bounds;
+import javafx.geometry.Side;
+import javafx.scene.Node;
+import javafx.scene.Parent;
+import javafx.scene.control.Button;
+import javafx.scene.control.ContextMenu;
+import javafx.scene.control.Hyperlink;
+import javafx.scene.control.Label;
+import javafx.scene.control.MenuButton;
+import javafx.scene.control.MenuItem;
+import javafx.scene.control.TitledPane;
+import javafx.scene.control.ToggleButton;
+import javafx.scene.control.Tooltip;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
+import javafx.scene.input.Dragboard;
+import javafx.scene.input.MouseEvent;
+import javafx.scene.input.TransferMode;
+import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Pane;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
+import javafx.scene.layout.TilePane;
+import javafx.scene.layout.VBox;
+import javafx.scene.paint.Color;
+import javafx.scene.shape.FillRule;
+import javafx.scene.shape.SVGPath;
+import javafx.scene.text.Text;
+import javafx.scene.text.TextFlow;
+import org.carlfx.axonic.StateMachine;
+import org.carlfx.cognitive.loader.Config;
+import org.carlfx.cognitive.loader.FXMLMvvmLoader;
+import org.carlfx.cognitive.loader.InjectViewModel;
+import org.carlfx.cognitive.loader.JFXNode;
+import org.carlfx.cognitive.loader.NamedVm;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.net.URL;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.format.FormatStyle;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
+import java.util.function.Consumer;
+
 import static dev.ikm.komet.kview.controls.KometIcon.IconValue.PLUS;
+import static dev.ikm.komet.kview.events.ClosePropertiesPanelEvent.CLOSE_PROPERTIES;
 import static dev.ikm.komet.kview.events.EventTopics.SAVE_PATTERN_TOPIC;
 import static dev.ikm.komet.kview.events.pattern.MakePatternWindowEvent.OPEN_PATTERN;
 import static dev.ikm.komet.kview.events.pattern.PatternDescriptionEvent.PATTERN_EDIT_OTHER_NAME;
@@ -41,18 +146,16 @@ import static dev.ikm.komet.kview.fxutils.TitledPaneHelper.putArrowOnRight;
 import static dev.ikm.komet.kview.fxutils.ViewportHelper.clipChildren;
 import static dev.ikm.komet.kview.fxutils.window.DraggableSupport.addDraggableNodes;
 import static dev.ikm.komet.kview.fxutils.window.DraggableSupport.removeDraggableNodes;
-import static dev.ikm.komet.kview.mvvm.model.DataModelHelper.fetchDescendentsOfConcept;
 import static dev.ikm.komet.kview.mvvm.model.DragAndDropType.CONCEPT;
 import static dev.ikm.komet.kview.mvvm.model.DragAndDropType.SEMANTIC;
 import static dev.ikm.komet.kview.mvvm.view.common.SVGConstants.DUPLICATE_SVG_PATH;
-import static dev.ikm.komet.kview.mvvm.viewmodel.FormViewModel.CREATE;
 import static dev.ikm.komet.kview.mvvm.viewmodel.FormViewModel.CURRENT_JOURNAL_WINDOW_TOPIC;
 import static dev.ikm.komet.kview.mvvm.viewmodel.FormViewModel.EDIT;
 import static dev.ikm.komet.kview.mvvm.viewmodel.FormViewModel.MODE;
 import static dev.ikm.komet.kview.mvvm.viewmodel.FormViewModel.VIEW_PROPERTIES;
+import static dev.ikm.komet.kview.mvvm.viewmodel.PatternViewModel.CREATE;
 import static dev.ikm.komet.kview.mvvm.viewmodel.PatternViewModel.FIELDS_COLLECTION;
 import static dev.ikm.komet.kview.mvvm.viewmodel.PatternViewModel.FQN_CASE_SIGNIFICANCE;
-import static dev.ikm.komet.kview.mvvm.viewmodel.PatternViewModel.FQN_DATE_ADDED_STR;
 import static dev.ikm.komet.kview.mvvm.viewmodel.PatternViewModel.FQN_DESCRIPTION_NAME;
 import static dev.ikm.komet.kview.mvvm.viewmodel.PatternViewModel.FQN_DESCRIPTION_NAME_TEXT;
 import static dev.ikm.komet.kview.mvvm.viewmodel.PatternViewModel.FQN_LANGUAGE;
@@ -64,118 +167,27 @@ import static dev.ikm.komet.kview.mvvm.viewmodel.PatternViewModel.OTHER_NAMES;
 import static dev.ikm.komet.kview.mvvm.viewmodel.PatternViewModel.PATTERN;
 import static dev.ikm.komet.kview.mvvm.viewmodel.PatternViewModel.PATTERN_TITLE_TEXT;
 import static dev.ikm.komet.kview.mvvm.viewmodel.PatternViewModel.PATTERN_TOPIC;
+import static dev.ikm.komet.kview.mvvm.viewmodel.PatternViewModel.PUBLISH_PENDING;
 import static dev.ikm.komet.kview.mvvm.viewmodel.PatternViewModel.PURPOSE_DATE_STR;
 import static dev.ikm.komet.kview.mvvm.viewmodel.PatternViewModel.PURPOSE_ENTITY;
 import static dev.ikm.komet.kview.mvvm.viewmodel.PatternViewModel.PURPOSE_TEXT;
 import static dev.ikm.komet.kview.mvvm.viewmodel.PatternViewModel.SELECTED_PATTERN_FIELD;
 import static dev.ikm.komet.kview.mvvm.viewmodel.PatternViewModel.STAMP_VIEW_MODEL;
 import static dev.ikm.komet.kview.mvvm.viewmodel.PatternViewModel.STATE_MACHINE;
-import static dev.ikm.komet.kview.mvvm.viewmodel.StampViewModel.MODULES_PROPERTY;
-import static dev.ikm.komet.kview.mvvm.viewmodel.StampViewModel.PATHS_PROPERTY;
+import static dev.ikm.komet.kview.mvvm.viewmodel.stamp.StampFormViewModelBase.Properties.AUTHOR;
+import static dev.ikm.komet.kview.mvvm.viewmodel.stamp.StampFormViewModelBase.Properties.FORM_TIME_TEXT;
+import static dev.ikm.komet.kview.mvvm.viewmodel.stamp.StampFormViewModelBase.Properties.IS_CONFIRMED_OR_SUBMITTED;
+import static dev.ikm.komet.kview.mvvm.viewmodel.stamp.StampFormViewModelBase.Properties.MODULE;
+import static dev.ikm.komet.kview.mvvm.viewmodel.stamp.StampFormViewModelBase.Properties.PATH;
+import static dev.ikm.komet.kview.mvvm.viewmodel.stamp.StampFormViewModelBase.Properties.STATUS;
 import static dev.ikm.tinkar.common.service.PrimitiveData.PREMUNDANE_TIME;
-import static dev.ikm.tinkar.coordinate.stamp.StampFields.MODULE;
-import static dev.ikm.tinkar.coordinate.stamp.StampFields.PATH;
-import static dev.ikm.tinkar.coordinate.stamp.StampFields.STATUS;
-import static dev.ikm.tinkar.coordinate.stamp.StampFields.TIME;
-import dev.ikm.komet.framework.Identicon;
-import dev.ikm.komet.framework.dnd.DragImageMaker;
-import dev.ikm.komet.framework.dnd.KometClipboard;
-import dev.ikm.komet.framework.events.EvtBusFactory;
-import dev.ikm.komet.framework.events.EvtType;
-import dev.ikm.komet.framework.events.Subscriber;
-import dev.ikm.komet.framework.view.ViewMenuModel;
-import dev.ikm.komet.framework.view.ViewProperties;
-import dev.ikm.komet.kview.controls.KometIcon;
-import dev.ikm.komet.kview.events.genediting.MakeGenEditingWindowEvent;
-import dev.ikm.komet.kview.events.pattern.MakePatternWindowEvent;
-import dev.ikm.komet.kview.events.pattern.PatternDefinitionEvent;
-import dev.ikm.komet.kview.events.pattern.PatternDescriptionEvent;
-import dev.ikm.komet.kview.events.pattern.PatternFieldsPanelEvent;
-import dev.ikm.komet.kview.events.pattern.PatternSavedEvent;
-import dev.ikm.komet.kview.events.pattern.PropertyPanelEvent;
-import dev.ikm.komet.kview.events.pattern.ShowPatternFormInBumpOutEvent;
-import dev.ikm.komet.kview.fxutils.IconsHelper;
-import dev.ikm.komet.kview.fxutils.MenuHelper;
-import dev.ikm.komet.kview.fxutils.SlideOutTrayHelper;
-import dev.ikm.komet.kview.mvvm.model.DescrName;
-import dev.ikm.komet.kview.mvvm.model.DragAndDropInfo;
-import dev.ikm.komet.kview.mvvm.model.DragAndDropType;
-import dev.ikm.komet.kview.mvvm.model.PatternDefinition;
-import dev.ikm.komet.kview.mvvm.model.PatternField;
-import dev.ikm.komet.kview.mvvm.view.journal.VerticallyFilledPane;
-import dev.ikm.komet.kview.mvvm.view.stamp.StampEditController;
-import dev.ikm.komet.kview.mvvm.viewmodel.PatternViewModel;
-import dev.ikm.komet.kview.mvvm.viewmodel.StampViewModel;
-import dev.ikm.tinkar.coordinate.view.calculator.ViewCalculator;
-import dev.ikm.tinkar.entity.ConceptEntity;
-import dev.ikm.tinkar.terms.ConceptFacade;
-import dev.ikm.tinkar.terms.EntityFacade;
-import dev.ikm.tinkar.terms.PatternFacade;
-import dev.ikm.tinkar.terms.SemanticFacade;
-import dev.ikm.tinkar.terms.TinkarTerm;
-import javafx.beans.binding.Bindings;
-import javafx.beans.binding.StringBinding;
-import javafx.beans.property.ObjectProperty;
-import javafx.collections.ListChangeListener;
-import javafx.collections.ObservableList;
-import javafx.event.ActionEvent;
-import javafx.event.EventHandler;
-import javafx.fxml.FXML;
-import javafx.geometry.Side;
-import javafx.scene.Node;
-import javafx.scene.control.Button;
-import javafx.scene.control.ContextMenu;
-import javafx.scene.control.Hyperlink;
-import javafx.scene.control.Label;
-import javafx.scene.control.MenuButton;
-import javafx.scene.control.MenuItem;
-import javafx.scene.control.TextField;
-import javafx.scene.control.TitledPane;
-import javafx.scene.control.ToggleButton;
-import javafx.scene.image.Image;
-import javafx.scene.image.ImageView;
-import javafx.scene.input.Dragboard;
-import javafx.scene.input.TransferMode;
-import javafx.scene.layout.BorderPane;
-import javafx.scene.layout.HBox;
-import javafx.scene.layout.Pane;
-import javafx.scene.layout.Region;
-import javafx.scene.layout.TilePane;
-import javafx.scene.layout.VBox;
-import javafx.scene.paint.Color;
-import javafx.scene.shape.FillRule;
-import javafx.scene.shape.SVGPath;
-import javafx.scene.text.Text;
-import javafx.scene.text.TextFlow;
-import org.carlfx.axonic.StateMachine;
-import org.carlfx.cognitive.loader.Config;
-import org.carlfx.cognitive.loader.FXMLMvvmLoader;
-import org.carlfx.cognitive.loader.InjectViewModel;
-import org.carlfx.cognitive.loader.JFXNode;
-import org.carlfx.cognitive.loader.NamedVm;
-import org.controlsfx.control.PopOver;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.net.URL;
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
-import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
-import java.util.function.Consumer;
+import static dev.ikm.tinkar.common.util.time.DateTimeUtil.PREMUNDANE;
 
 public class PatternDetailsController {
 
     private static final Logger LOG = LoggerFactory.getLogger(PatternDetailsController.class);
 
     public static final URL PATTERN_PROPERTIES_VIEW_FXML_URL = PatternDetailsController.class.getResource("pattern-properties.fxml");
-
-    private static final String EDIT_STAMP_OPTIONS_FXML = "stamp-edit.fxml";
 
     private Consumer<ToggleButton> reasonerResultsControllerConsumer;
 
@@ -209,22 +221,13 @@ public class PatternDetailsController {
     private Label patternTitleText;
 
     @FXML
-    private TextField identifierText;
+    private PublicIDListControl identifierControl;
 
     @FXML
     private TextFlow latestFqnTextFlow;
 
     @FXML
-    private Text lastUpdatedText;
-
-    @FXML
-    private Text moduleText;
-
-    @FXML
-    private Text pathText;
-
-    @FXML
-    private Text statusText;
+    StampViewControl stampViewControl;
 
     @FXML
     private TitledPane patternDefinitionTitledPane;
@@ -247,6 +250,9 @@ public class PatternDetailsController {
 
     @FXML
     private Button savePatternButton;
+
+    @FXML
+    private StackPane publishStackPane;
 
     // pattern definition fields
     @FXML
@@ -301,15 +307,12 @@ public class PatternDetailsController {
     @FXML
     private HBox conceptHeaderControlToolBarHbox;
 
-    /**
-     * Stamp Edit
-     */
-    private PopOver stampEdit;
-
-    private StampEditController stampEditController;
-
     @InjectViewModel
     private PatternViewModel patternViewModel;
+
+    private boolean isUpdatingStampSelection = false;
+
+    private final Tooltip publishTooltip = new Tooltip();
 
     private Subscriber<PropertyPanelEvent> patternPropertiesEventSubscriber;
 
@@ -319,22 +322,38 @@ public class PatternDetailsController {
 
     private Subscriber<PatternFieldsPanelEvent> patternFieldsPanelEventSubscriber;
 
+    private Subscriber<ClosePropertiesPanelEvent> closePropertiesPanelEventSubscriber;
+
     public PatternDetailsController() {}
 
     @FXML
     private void initialize() {
         purposeText.setText("");
         meaningText.setText("");
-        identifierText.setText("");
+        fqnAddDateLabel.setText("");
         fieldsTilePane.getChildren().clear();
         fieldsTilePane.setPrefColumns(2);
         otherNamesVBox.getChildren().clear();
+
+        stampViewControl.selectedProperty().subscribe(this::onStampSelectionChanged);
 
         //DragNDrop feature for Semantic Purpose and Semantic Meaning
         setUpDraggable(purposeText, patternViewModel.getProperty(PURPOSE_ENTITY));
         setUpDraggable(meaningText, patternViewModel.getProperty(MEANING_ENTITY));
 
         setUpAddSemanticMenu();
+
+        // Bind the Publish button's disable property to the ViewModel
+        BooleanProperty newChangeProp = patternViewModel.getProperty(PUBLISH_PENDING);
+        publishTooltip.textProperty().bind(Bindings.when(savePatternButton.disableProperty())
+                .then("Publish: Disabled")
+                .otherwise("Submit"));
+
+        // Assign the tooltip to the StackPane (container of Publish button)
+        setupTooltipForDisabledButton(savePatternButton);
+
+        // Disable button when not valid or newChangeProp is false.
+        savePatternButton.disableProperty().bind(patternViewModel.getBooleanProperty(IS_INVALID).or(newChangeProp.not()));
 
         // listen for open and close events
         patternPropertiesEventSubscriber = (evt) -> {
@@ -357,9 +376,6 @@ public class PatternDetailsController {
             }
         };
         EvtBusFactory.getDefaultEvtBus().subscribe(patternViewModel.getPropertyValue(PATTERN_TOPIC), PropertyPanelEvent.class, patternPropertiesEventSubscriber);
-
-        savePatternButton.disableProperty().bind(patternViewModel.getProperty(IS_INVALID));
-
 
         patternDefinitionEventSubscriber = evt -> patternViewModel.setPurposeAndMeaningText(evt.getPatternDefinition());
 
@@ -409,6 +425,7 @@ public class PatternDetailsController {
                 descrNameObservableList.add(evt.getDescrName());
                 patternSM.t("otherNameDone");
             }
+            patternViewModel.setPropertyValue(PUBLISH_PENDING, true);
         };
         EvtBusFactory.getDefaultEvtBus().subscribe(patternViewModel.getPropertyValue(PATTERN_TOPIC), PatternDescriptionEvent.class, patternDescriptionEventSubscriber);
 
@@ -417,36 +434,28 @@ public class PatternDetailsController {
             patternTitleText.textProperty().bind(patternViewModel.getProperty(PATTERN_TITLE_TEXT));
         }
 
-        // bind stamp
-        lastUpdatedText.textProperty().bind(getStampViewModel().getProperty(TIME).map(t -> {
-            if (!t.equals(PREMUNDANE_TIME) && patternViewModel.getPropertyValue(MODE).equals(EDIT)) {
-                DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MMM-dd HH:mm:ss");
-                Instant stampInstance = Instant.ofEpochSecond((long) t / 1000);
-                ZonedDateTime stampTime = ZonedDateTime.ofInstant(stampInstance, ZoneOffset.UTC);
-                return DATE_TIME_FORMATTER.format(stampTime);
-            } else {
-                return patternViewModel.getPropertyValue(MODE).equals("CREATE")? "" : "Premundane";
-            }
-        }));
-
-        moduleText.textProperty().bind(getStampViewModel().getProperty(MODULE).map(m -> ((ConceptEntity) m).description()));
-        pathText.textProperty().bind(getStampViewModel().getProperty(PATH).map(p -> ((ConceptEntity) p).description()));
-        statusText.textProperty().bind(getStampViewModel().getProperty(STATUS).map(s -> s.toString()));
-
         // set the identicon
         ObjectProperty<EntityFacade> patternProperty = patternViewModel.getProperty(PATTERN);
 
-        // dynamically update the identicon image.
         patternProperty.subscribe(entityFacade -> {
+            if (propertiesController != null) {
+                propertiesController.updateModel(entityFacade);
+            }
+
             if (entityFacade != null) {
+                patternViewModel.setPropertyValue(MODE, EDIT);
+
+                // dynamically update the identicon image.
                 Image identicon = Identicon.generateIdenticonImage(entityFacade.publicId());
                 identiconImageView.setImage(identicon);
+            } else {
+                patternViewModel.setPropertyValue(MODE, CREATE);
             }
         });
 
-        // show the public id
-        identifierText.textProperty().bind(patternViewModel.getProperty(PATTERN).map(pf ->
-                String.valueOf(((EntityFacade) pf).toProxy().publicId().asUuidList().getLastOptional().get())));
+        ViewCalculator viewCalculator = getViewProperties().calculator();
+
+        updateDisplayIdentifier(viewCalculator);
 
         // capture pattern definition information
         purposeText.textProperty().bind(patternViewModel.getProperty(PURPOSE_TEXT));
@@ -465,33 +474,24 @@ public class PatternDetailsController {
         // Generate description semantic and show
         fqnDescriptionSemanticText.textProperty().bind(fqnNameProp.map(descrName -> " (%s)".formatted(generateDescriptionSemantics(descrName))).orElse(""));
 
-        //Fetch the FQN_DATE_ADDED_STR from the PATTERN Entity
-        StringBinding dateStrProp = Bindings.createStringBinding(
-                () -> {
-                    if (patternProperty.get() != null) {
-                        return LocalDate.ofInstant(
-                                getViewProperties().calculator()
-                                        .getFullyQualifiedDescription(patternProperty.get().nid())
-                                        .get().instant(),
-                                ZoneId.systemDefault()
-                        ).format(DateTimeFormatter.ofPattern("MMM dd, yyyy"));
+        fqnNameProp.subscribe(descrName -> {
+            if (descrName != null && descrName.getSemanticPublicId() != null) {
+                Latest<EntityVersion> semanticVersionLatest = getViewProperties().calculator().latest(Entity.nid(descrName.getSemanticPublicId()));
+                semanticVersionLatest.ifPresent(entityVersion -> {
+                    long rawTime = entityVersion.time();
+                    String dateText = null;
+                    if (rawTime == PREMUNDANE_TIME) {
+                        dateText = PREMUNDANE;
                     } else {
-                        return "";
+                        Locale userLocale = Locale.getDefault();
+                        LocalDate localDate = Instant.ofEpochMilli(rawTime).atZone(ZoneId.systemDefault()).toLocalDate();
+                        DateTimeFormatter formatter = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(userLocale);
+                        dateText = formatter.format(localDate);
                     }
-                },
-                patternProperty
-        );
-        patternViewModel.getStringProperty(FQN_DATE_ADDED_STR).bind(dateStrProp);
-
-        if (patternViewModel.getPropertyValue(MODE).equals(CREATE)) {
-            //FIXME this code was designed for edit... if it is an existing pattern it was overwriting the date added with the current date;
-            // we might need to change it to a change listener...
-
-            // display current date else blank.
-            fqnAddDateLabel.textProperty().bind(fqnNameProp.map((fqnName) -> LocalDate.now().format(DateTimeFormatter.ofPattern("MMM d, yyyy"))).orElse(""));
-        } else {
-            fqnAddDateLabel.textProperty().bind(patternViewModel.getStringProperty(FQN_DATE_ADDED_STR));
-        }
+                    fqnAddDateLabel.setText(dateText);
+                });
+            }
+        });
 
         // hide menu item if FQN is added.
         addFqnMenuItem.visibleProperty().bind(fqnNameProp.isNull());
@@ -522,28 +522,41 @@ public class PatternDetailsController {
             patternFieldList.add(fieldPosition, patternField);
             // save and therefore validate
             patternViewModel.save();
+            patternViewModel.setPropertyValue(PUBLISH_PENDING, true);
         };
         EvtBusFactory.getDefaultEvtBus().subscribe(patternViewModel.getPropertyValue(PATTERN_TOPIC), PatternFieldsPanelEvent.class, patternFieldsPanelEventSubscriber);
 
-        patternFieldList.addListener((ListChangeListener<? super PatternField>) changeListner -> {
-            while (changeListner.next()) {
+        patternFieldList.addListener((ListChangeListener<? super PatternField>) changeListener -> {
+            while (changeListener.next()) {
                 // when the collection is cleared, the removed size will equal the tile pane size, so clear the tile pane
                 // since the changeListner.wasRemoved() will not account for clearing all of them if the collection is cleared
-                if (changeListner.getRemovedSize() > 0 && changeListner.getRemovedSize() == fieldsTilePaneList.size()) {
+                if (changeListener.getRemovedSize() > 0 && changeListener.getRemovedSize() == fieldsTilePaneList.size()) {
                     fieldsTilePaneList.clear();
                 } else {
-                    if (changeListner.wasAdded()) {
-                        int fieldPosition = changeListner.getTo() - 1;
+                    if (changeListener.wasAdded()) {
+                        int fieldPosition = changeListener.getTo() - 1;
                         // update the display.
-                        fieldsTilePane.getChildren().add(fieldPosition, createFieldEntry(changeListner.getAddedSubList().getFirst(), changeListner.getTo()));
-                    } else if (changeListner.wasRemoved()) {
-                        fieldsTilePaneList.remove(changeListner.getTo());
+                        fieldsTilePane.getChildren().add(fieldPosition, createFieldEntry(changeListener.getAddedSubList().getFirst(), changeListener.getTo()));
+                    } else if (changeListener.wasRemoved()) {
+                        fieldsTilePaneList.remove(changeListener.getTo());
 
                     }
                     patternViewModel.save();
                 }
             }
         });
+
+        // if a pattern is already in the database ( e.g we are not in create mode)
+        // than the user should not be able to add editional fields. only edit existing once
+        SimpleStringProperty mode =  patternViewModel.getProperty(MODE);
+        BooleanBinding patternNotInCreateMode = Bindings.notEqual(mode, CREATE);
+
+        addFieldsButton.disableProperty().bind(patternNotInCreateMode);
+
+        // if the user clicks the Close Properties Button from the Edit Descriptions panel
+        // in that state, the properties bump out will be slid out, therefore firing will perform a slide in
+        closePropertiesPanelEventSubscriber = evt -> propertiesToggleButton.fire();
+        EvtBusFactory.getDefaultEvtBus().subscribe(patternViewModel.getPropertyValue(PATTERN_TOPIC), ClosePropertiesPanelEvent.class, closePropertiesPanelEventSubscriber);
 
         // Setup Properties
         setupProperties();
@@ -555,6 +568,34 @@ public class PatternDetailsController {
         // Check if the properties panel is initially open and add draggable nodes if needed
         if (propertiesToggleButton.isSelected() || isOpen(propertiesSlideoutTrayPane)) {
             updateDraggableNodesForPropertiesPanel(true);
+        }
+    }
+
+    private void onStampSelectionChanged() {
+        if (isUpdatingStampSelection) {
+            return;
+        }
+
+        if (stampViewControl.isSelected()) {
+            if (!propertiesToggleButton.isSelected()) {
+                propertiesToggleButton.fire();
+            }
+            if (CREATE.equals(patternViewModel.getPropertyValue(MODE))) {
+                EvtBusFactory.getDefaultEvtBus().publish(patternViewModel.getPropertyValue(PATTERN_TOPIC), new StampEvent(stampViewControl, StampEvent.CREATE_STAMP));
+            } else {
+                EvtBusFactory.getDefaultEvtBus().publish(patternViewModel.getPropertyValue(PATTERN_TOPIC), new StampEvent(stampViewControl, StampEvent.ADD_STAMP));
+            }
+        } else {
+            EvtBusFactory.getDefaultEvtBus().publish(patternViewModel.getPropertyValue(PATTERN_TOPIC), new ClosePropertiesPanelEvent(stampViewControl, CLOSE_PROPERTIES));
+        }
+    }
+
+    /// Show the public ID
+    private void updateDisplayIdentifier(ViewCalculator viewCalculator) {
+        PatternFacade patternFacade = (PatternFacade) patternViewModel.getProperty(PATTERN).getValue();
+
+        if (patternFacade != null) {
+            identifierControl.updatePublicIdList(viewCalculator, patternFacade);
         }
     }
 
@@ -727,31 +768,33 @@ public class PatternDetailsController {
         TextFlow row2 = new TextFlow();
         row2.getChildren().addAll(semanticDescrText);
 
-        // update date
-        String dateAddedStr = "";
-        if (otherName.getStamp() == null) {
-            dateAddedStr = LocalDate.now().format(DateTimeFormatter.ofPattern("MMM d, yyyy")).toString();
-        } else {
-            Long otherNameMilis = otherName.getStamp().time();
-            if (otherNameMilis.equals(PREMUNDANE_TIME)) {
-                dateAddedStr = "Premundane";
-            } else {
-                LocalDate localDate = Instant.ofEpochMilli(otherNameMilis).atZone(ZoneId.systemDefault()).toLocalDate();
-                dateAddedStr = localDate.format(DateTimeFormatter.ofPattern("MMM d, yyyy")).toString();
-            }
-        }
-
         TextFlow row3 = new TextFlow();
         Text dateAddedLabel = new Text("Date Added: ");
         dateAddedLabel.getStyleClass().add("grey8-12pt-bold");
-        Text dateLabel = new Text(dateAddedStr);
-        dateLabel.getStyleClass().add("grey8-12pt-bold");
 
-        Hyperlink attachmentHyperlink = createActionLink(IconsHelper.createIcon(ATTACHMENT));
-        Hyperlink commentsHyperlink = createActionLink(IconsHelper.createIcon(COMMENTS));
+        if (otherName.getSemanticPublicId() != null) {
+            Latest<EntityVersion> semanticVersionLatest = getViewProperties().calculator().latest(Entity.nid(otherName.getSemanticPublicId()));
+            semanticVersionLatest.ifPresent(entityVersion -> {
+                long rawTime = entityVersion.time();
+                String dateText = null;
+                if (rawTime == PREMUNDANE_TIME) {
+                    dateText = PREMUNDANE;
+                } else {
+                    Locale userLocale = Locale.getDefault();
+                    LocalDate localDate = Instant.ofEpochMilli(rawTime).atZone(ZoneId.systemDefault()).toLocalDate();
+                    DateTimeFormatter formatter = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(userLocale);
+                    dateText = formatter.format(localDate);
+                }
 
-        // Add the date info and additional hyperlinks
-        row3.getChildren().addAll(dateAddedLabel, dateLabel, attachmentHyperlink, commentsHyperlink);
+                Text dateLabel = new Text(dateText);
+                dateLabel.getStyleClass().add("grey8-12pt-bold");
+                Hyperlink attachmentHyperlink = createActionLink(IconsHelper.createIcon(ATTACHMENT));
+                Hyperlink commentsHyperlink = createActionLink(IconsHelper.createIcon(COMMENTS));
+
+                // Add the date info and additional hyperlinks
+                row3.getChildren().addAll(dateAddedLabel, dateLabel, attachmentHyperlink, commentsHyperlink);
+            });
+        }
 
         textFlows.add(row1);
         textFlows.add(row2);
@@ -780,10 +823,13 @@ public class PatternDetailsController {
         ObservableList<Node> fieldVBoxes = fieldsTilePane.getChildren();
         for (int i=0 ; i < fieldVBoxes.size(); i++) {
             Node node = fieldVBoxes.get(i);
-            Node labelNode = node.lookup(".pattern-field");
-            if (labelNode instanceof Label label) {
-                label.setText("FIELD " + (i+1) + ":");
-                label.getStyleClass().add("grey8-12pt-bold");
+            if (node instanceof Parent parent) {
+                for (Node child : parent.getChildrenUnmodifiable()) {
+                    if (child instanceof Label label && label.getStyleClass().contains("grey8-12pt-bold")) {
+                        label.setText("FIELD " + (i + 1) + ":");
+                        break;
+                    }
+                }
             }
         }
     }
@@ -805,7 +851,7 @@ public class PatternDetailsController {
         } else {
             Long fieldMilis = patternField.stamp().time();
             if (fieldMilis.equals(PREMUNDANE_TIME)) {
-                dateAddedStr = "Premundane";
+                dateAddedStr = PREMUNDANE;
             } else {
                 LocalDate localDate = Instant.ofEpochMilli(fieldMilis).atZone(ZoneId.systemDefault()).toLocalDate();
                 dateAddedStr = localDate.format(DateTimeFormatter.ofPattern("MMM d, yyyy")).toString();
@@ -849,9 +895,76 @@ public class PatternDetailsController {
         this.propertiesController = propsFXMLLoader.controller();
         attachPropertiesViewSlideoutTray(this.propertiesBorderPane);
 
+        // Stamp
+        patternViewModel.getProperty(STAMP_VIEW_MODEL).bind(propertiesController.stampFormViewModelProperty());
+
+        propertiesController.updateModel(patternViewModel.getPropertyValue(PATTERN));
+
+        patternViewModel.getProperty(MODE).subscribe(newMode -> {
+            StampFormViewModelBase stampFormViewModel = propertiesController.getStampFormViewModel();
+
+            if (newMode.equals(EDIT)) {
+                updateStampControlFromViewModel();
+                stampFormViewModel.getBooleanProperty(IS_CONFIRMED_OR_SUBMITTED).subscribe(isSubmitted -> {
+                    if (isSubmitted) {
+                        updateStampControlFromViewModel();
+                        patternViewModel.setPropertyValue(PUBLISH_PENDING, true);
+                    }
+                });
+            } else if(newMode.equals(CREATE)) {
+                stampFormViewModel.getBooleanProperty(IS_CONFIRMED_OR_SUBMITTED).subscribe(isConfirmed -> {
+                    if (isConfirmed) {
+                        updateStampControlFromViewModel();
+                    }
+                });
+            }
+        });
+
         //FIXME this doesn't work properly, should leave for a future effort...
         // open the panel, allow the state machine to determine which panel to show
         //EvtBusFactory.getDefaultEvtBus().publish(patternViewModel.getPropertyValue(PATTERN_TOPIC), new PropertyPanelEvent(propertiesToggleButton, OPEN_PANEL));
+    }
+
+    private void updateStampControlFromViewModel() {
+        StampFormViewModelBase stampFormViewModel = propertiesController.getStampFormViewModel();
+
+        if (stampFormViewModel == null) {
+            return;
+        }
+
+        // -- status
+        State newStatus = stampFormViewModel.getPropertyValue(STATUS);
+        String statusMsg = newStatus == null ? "Active" : getViewProperties().calculator().getPreferredDescriptionTextWithFallbackOrNid(((State) newStatus).nid());
+        stampViewControl.setStatus(statusMsg);
+
+        // -- time
+        String newTime = stampFormViewModel.getPropertyValue(FORM_TIME_TEXT);
+        stampViewControl.setLastUpdated(newTime);
+
+        // -- author
+        EntityFacade newAuthor = stampFormViewModel.getPropertyValue(AUTHOR);
+        String authorDescription = ViewCalculatorUtils.getDescriptionTextWithFallbackOrNid(newAuthor, getViewProperties());
+        stampViewControl.setAuthor(authorDescription);
+
+        // -- module
+        ConceptFacade newModule = stampFormViewModel.getPropertyValue(MODULE);
+        String newModuleDescription;
+        if (newModule == null) {
+            newModuleDescription = "";
+        } else {
+            newModuleDescription = getViewProperties().calculator().getPreferredDescriptionTextWithFallbackOrNid((newModule).nid());
+        }
+        stampViewControl.setModule(newModuleDescription);
+
+        // -- path
+        ConceptFacade newPath = stampFormViewModel.getPropertyValue(PATH);
+        String pathDescr;
+        if (newPath == null) {
+            pathDescr = "";
+        } else {
+            pathDescr = getViewProperties().calculator().getPreferredDescriptionTextWithFallbackOrNid((newPath).nid());
+        }
+        stampViewControl.setPath(pathDescr);
     }
 
     public ViewProperties getViewProperties() {
@@ -972,58 +1085,6 @@ public class PatternDetailsController {
     }
 
     @FXML
-    public void popupStampEdit(ActionEvent event) {
-        if (stampEdit != null && stampEditController != null) {
-            // refresh modules
-            getStampViewModel().getObservableList(MODULES_PROPERTY).clear();
-            getStampViewModel().getObservableList(MODULES_PROPERTY).addAll(fetchDescendentsOfConcept(getViewProperties(), TinkarTerm.MODULE.publicId()));
-
-            // refresh path
-            getStampViewModel().getObservableList(PATHS_PROPERTY).clear();
-            getStampViewModel().getObservableList(PATHS_PROPERTY).addAll(fetchDescendentsOfConcept(getViewProperties(), TinkarTerm.PATH.publicId()));
-
-            stampEdit.show((Node) event.getSource());
-            stampEditController.selectActiveStatusToggle();
-            return;
-        }
-
-        // The stampViewModel is already created for the PatternDetailsController when instantiated
-        // inside the JournalController
-        // Inject Stamp view model into form.
-        Config stampConfig = new Config(StampEditController.class.getResource(EDIT_STAMP_OPTIONS_FXML))
-                .addNamedViewModel(new NamedVm("stampViewModel", getStampViewModel()));
-        JFXNode<Pane, StampEditController> stampJFXNode = FXMLMvvmLoader.make(stampConfig);
-
-        // for now, we are in create mode, but in the future we will check to see if we are in EDIT mode
-
-        Pane editStampPane = stampJFXNode.node();
-        PopOver popOver = new PopOver(editStampPane);
-        popOver.getStyleClass().add("filter-menu-popup");
-        StampEditController stampEditController = stampJFXNode.controller();
-
-        stampEditController.updateModel(getViewProperties());
-
-        // default the status=Active, disable inactive
-        stampEditController.selectActiveStatusToggle();
-
-        popOver.setOnHidden(windowEvent -> {
-            // set Stamp info into Details form
-            getStampViewModel().save();
-            patternViewModel.save();
-        });
-
-        popOver.show((Node) event.getSource());
-
-        // store and use later.
-        stampEdit = popOver;
-        this.stampEditController = stampEditController;
-    }
-
-    public StampViewModel getStampViewModel() {
-        return patternViewModel.getPropertyValue(STAMP_VIEW_MODEL);
-    }
-
-    @FXML
     private void openTimelinePanel(ActionEvent event) {
         LOG.info("not implemented yet");
 //        ToggleButton timelineToggle = (ToggleButton) event.getSource();
@@ -1043,6 +1104,10 @@ public class PatternDetailsController {
         EvtType<PropertyPanelEvent> eventEvtType = propertyToggle.isSelected() ? OPEN_PANEL : CLOSE_PANEL;
 
         updateDraggableNodesForPropertiesPanel(propertyToggle.isSelected());
+
+        isUpdatingStampSelection = true;
+        stampViewControl.setSelected(propertyToggle.isSelected());
+        isUpdatingStampSelection = false;
 
         EvtBusFactory.getDefaultEvtBus().publish(patternViewModel.getPropertyValue(PATTERN_TOPIC), new PropertyPanelEvent(propertyToggle, eventEvtType));
     }
@@ -1074,14 +1139,14 @@ public class PatternDetailsController {
         LOG.info(isValidSave ? "success" : "failed");
         if(isValidSave){
             patternViewModel.setPropertyValue(MODE, EDIT);
-            patternViewModel.updateStamp();
             EvtBusFactory.getDefaultEvtBus().publish(SAVE_PATTERN_TOPIC, new PatternSavedEvent(actionEvent.getSource(), PatternSavedEvent.PATTERN_UPDATE_EVENT));
 
             EvtBusFactory.getDefaultEvtBus().publish(SAVE_PATTERN_TOPIC,
                     new MakePatternWindowEvent(actionEvent.getSource(), OPEN_PATTERN, patternViewModel.getPropertyValue(PATTERN), patternViewModel.getViewProperties()));
 
-            patternViewModel.setPropertyValue(IS_INVALID, true);
+            patternViewModel.setPropertyValue(PUBLISH_PENDING, false);
             patternViewModel.reLoadPatternValues();
+            updateStampControlFromViewModel();
         }
     }
 
@@ -1137,5 +1202,61 @@ public class PatternDetailsController {
         }
 
         updateDraggableNodesForPropertiesPanel(isOpen);
+    }
+
+    private void setupTooltipForDisabledButton(Button button) {
+
+        button.disabledProperty().subscribe(isNowDisabled -> {
+            if (isNowDisabled) {
+                Tooltip.uninstall(button, publishTooltip);
+
+                // Create unique handlers for each button-tooltip pair
+                EventHandler<MouseEvent> showHandler = showTooltipOnDisabledButton(button, publishTooltip);
+                EventHandler<MouseEvent> hideHandler = hideTooltipHandler(publishTooltip);
+
+                // Store handlers on the button's properties for later removal
+                button.getProperties().put("showHandler", showHandler);
+                button.getProperties().put("hideHandler", hideHandler);
+
+                publishStackPane.addEventFilter(MouseEvent.MOUSE_MOVED, showHandler);
+                publishStackPane.addEventFilter(MouseEvent.MOUSE_EXITED, hideHandler);
+            } else {
+                Tooltip.install(button, publishTooltip);
+                publishTooltip.hide();
+
+                // Remove handlers if present
+                EventHandler<MouseEvent> showHandler = (EventHandler<MouseEvent>) button.getProperties().get("showHandler");
+                EventHandler<MouseEvent> hideHandler = (EventHandler<MouseEvent>) button.getProperties().get("hideHandler");
+                if (showHandler != null) publishStackPane.removeEventFilter(MouseEvent.MOUSE_MOVED, showHandler);
+                if (hideHandler != null) publishStackPane.removeEventFilter(MouseEvent.MOUSE_EXITED, hideHandler);
+            }
+        });
+    }
+
+    private EventHandler<MouseEvent> showTooltipOnDisabledButton(Button button, Tooltip tooltip) {
+        return event -> {
+            if (button.isDisabled()) {
+                Bounds bounds = button.localToScreen(button.getBoundsInLocal());
+                double mouseX = event.getScreenX();
+                double mouseY = event.getScreenY();
+                if (bounds.contains(mouseX, mouseY)) {
+                    if (!tooltip.isShowing()) {
+                        tooltip.show(button, mouseX, mouseY + 10);
+                    }
+                } else {
+                    tooltip.hide();
+                }
+            } else {
+                tooltip.hide();
+            }
+        };
+    }
+
+    private EventHandler<MouseEvent> hideTooltipHandler(Tooltip tooltip) {
+        return event -> tooltip.hide();
+    }
+
+    public PropertiesController getPropertiesController() {
+        return propertiesController;
     }
 }

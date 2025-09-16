@@ -23,11 +23,13 @@ open module dev.ikm.komet.rules {
     requires org.evrete.dsl.java;
     // TODO remove requires classification after moving LogicalExpressionAdaptorFactory to tinkar-core.
     requires dev.ikm.komet.classification;
+	requires dev.ikm.elk.snomed;
+	requires javafx.controls;
 
     exports dev.ikm.komet.rules.evrete;
     exports dev.ikm.komet.rules.annotated to dev.ikm.komet.rules.test;
 
     provides RuleService with EvreteRulesService;
 
-    uses dev.ikm.komet.framework.events.EvtBus;
+    uses dev.ikm.tinkar.events.EvtBus;
 }

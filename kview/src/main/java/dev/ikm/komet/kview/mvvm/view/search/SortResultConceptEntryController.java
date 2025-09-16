@@ -15,20 +15,27 @@
  */
 package dev.ikm.komet.kview.mvvm.view.search;
 
+import static dev.ikm.komet.kview.mvvm.view.search.NextGenSearchController.getDragAndDropType;
+import static dev.ikm.komet.kview.mvvm.view.search.NextGenSearchController.setUpDraggable;
+import static dev.ikm.komet.kview.mvvm.viewmodel.FormViewModel.CURRENT_JOURNAL_WINDOW_TOPIC;
+import static dev.ikm.komet.kview.mvvm.viewmodel.FormViewModel.VIEW_PROPERTIES;
 import dev.ikm.komet.framework.Identicon;
-import dev.ikm.komet.framework.events.EvtBus;
-import dev.ikm.komet.framework.events.EvtBusFactory;
 import dev.ikm.komet.framework.view.ObservableViewNoOverride;
 import dev.ikm.komet.framework.view.ViewProperties;
 import dev.ikm.komet.kview.events.MakeConceptWindowEvent;
 import dev.ikm.komet.kview.events.ShowNavigationalPanelEvent;
+import dev.ikm.komet.kview.events.genediting.MakeGenEditingWindowEvent;
 import dev.ikm.komet.kview.events.pattern.MakePatternWindowEvent;
 import dev.ikm.komet.kview.mvvm.view.AbstractBasicController;
 import dev.ikm.tinkar.coordinate.stamp.calculator.LatestVersionSearchResult;
 import dev.ikm.tinkar.entity.ConceptEntity;
 import dev.ikm.tinkar.entity.Entity;
+import dev.ikm.tinkar.entity.EntityService;
 import dev.ikm.tinkar.entity.EntityVersion;
 import dev.ikm.tinkar.entity.PatternEntity;
+import dev.ikm.tinkar.events.EvtBus;
+import dev.ikm.tinkar.events.EvtBusFactory;
+import dev.ikm.tinkar.terms.EntityFacade;
 import javafx.collections.ListChangeListener;
 import javafx.collections.ObservableList;
 import javafx.event.ActionEvent;
@@ -51,9 +58,6 @@ import javafx.scene.text.TextFlow;
 import org.carlfx.cognitive.loader.InjectViewModel;
 import org.carlfx.cognitive.viewmodel.SimpleViewModel;
 import org.carlfx.cognitive.viewmodel.ViewModel;
-
-import static dev.ikm.komet.kview.mvvm.viewmodel.FormViewModel.CURRENT_JOURNAL_WINDOW_TOPIC;
-import static dev.ikm.komet.kview.mvvm.viewmodel.FormViewModel.VIEW_PROPERTIES;
 
 
 public class SortResultConceptEntryController extends AbstractBasicController {
@@ -224,6 +228,7 @@ public class SortResultConceptEntryController extends AbstractBasicController {
         private HBox cellContainer = new HBox();
         private TextFlow textFlow = new TextFlow();
         private ImageView identicon = new ImageView();
+        private int currentNid = -1;
 
         public DescriptionSemanticListCell() {
             cellContainer.getChildren().addAll(
@@ -236,6 +241,21 @@ public class SortResultConceptEntryController extends AbstractBasicController {
             identicon.setFitHeight(16);
             identicon.setFitWidth(16);
 
+            cellContainer.setOnMouseClicked(mouseEvent -> {
+                if (currentNid == -1) {
+                    return;
+                }
+
+                if (mouseEvent.getButton().equals(MouseButton.PRIMARY)) {
+                    if (mouseEvent.getClickCount() == 2) {
+                        EntityFacade semanticChronology = EntityService.get().getEntity(currentNid).get();
+                        EvtBusFactory.getDefaultEvtBus().publish(searchEntryViewModel.getPropertyValue(CURRENT_JOURNAL_WINDOW_TOPIC),
+                                new MakeGenEditingWindowEvent(this,
+                                        MakeGenEditingWindowEvent.OPEN_GEN_EDIT, semanticChronology, searchEntryViewModel.getPropertyValue(VIEW_PROPERTIES)));
+                    }
+                }
+            });
+
             cellContainer.getStyleClass().add("cell-container");
             textFlow.getStyleClass().add("text-container");
         }
@@ -244,12 +264,16 @@ public class SortResultConceptEntryController extends AbstractBasicController {
         protected void updateItem(LatestVersionSearchResult item, boolean empty) {
             if (item == null || empty) {
                 setGraphic(null);
+                currentNid = -1;
             } else {
                 item.latestVersion().ifPresent(semanticEntityVersion -> {
                     identicon.setImage(Identicon.generateIdenticonImage(semanticEntityVersion.publicId()));
+                    currentNid = semanticEntityVersion.nid();
+                    setUpDraggable(cellContainer, semanticEntityVersion.entity(), getDragAndDropType(semanticEntityVersion.entity()));
                 });
-                updateTextFlow(textFlow, item.highlightedString());
-
+                if (item.highlightedString() != null) {
+                    updateTextFlow(textFlow, item.highlightedString());
+                }
                 setGraphic(cellContainer);
             }
         }
@@ -257,9 +281,7 @@ public class SortResultConceptEntryController extends AbstractBasicController {
         private void updateTextFlow(TextFlow textFlow, String highlightedString) {
             textFlow.getChildren().clear();
             String[] words = highlightedString.split(" ");
-            for (int i = 0; i < words.length; ++i) {
-                String word = words[i];
-
+            for (String word : words) {
                 Text text = new Text();
                 StackPane textContainer = new StackPane(text);
 
@@ -272,7 +294,7 @@ public class SortResultConceptEntryController extends AbstractBasicController {
                 } else {
                     text.setText(word);
                 }
-                
+
                 textContainer.getStyleClass().add("word-container");
 
                 textFlow.getChildren().add(textContainer);

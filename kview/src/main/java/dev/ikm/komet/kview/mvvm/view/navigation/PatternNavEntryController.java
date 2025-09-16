@@ -1,13 +1,6 @@
 package dev.ikm.komet.kview.mvvm.view.navigation;
 
-import static dev.ikm.komet.kview.controls.KometIcon.IconValue.PLUS;
-import static dev.ikm.komet.kview.controls.KometIcon.IconValue.TRASH;
-import static dev.ikm.komet.kview.mvvm.view.navigation.PatternNavEntryController.PatternNavEntry.INSTANCES;
-import static dev.ikm.komet.kview.mvvm.view.navigation.PatternNavEntryController.PatternNavEntry.PATTERN_FACADE;
-import static dev.ikm.komet.kview.mvvm.viewmodel.FormViewModel.CURRENT_JOURNAL_WINDOW_TOPIC;
-import static dev.ikm.komet.kview.mvvm.viewmodel.FormViewModel.VIEW_PROPERTIES;
 import dev.ikm.komet.framework.Identicon;
-import dev.ikm.komet.framework.events.EvtBusFactory;
 import dev.ikm.komet.framework.view.ViewProperties;
 import dev.ikm.komet.kview.controls.KometIcon;
 import dev.ikm.komet.kview.events.genediting.MakeGenEditingWindowEvent;
@@ -15,22 +8,19 @@ import dev.ikm.komet.kview.events.pattern.MakePatternWindowEvent;
 import dev.ikm.tinkar.coordinate.view.calculator.ViewCalculator;
 import dev.ikm.tinkar.entity.EntityService;
 import dev.ikm.tinkar.entity.SemanticEntity;
+import dev.ikm.tinkar.events.EvtBusFactory;
 import dev.ikm.tinkar.terms.EntityFacade;
 import dev.ikm.tinkar.terms.PatternFacade;
 import javafx.application.Platform;
 import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
-import javafx.scene.control.ContextMenu;
-import javafx.scene.control.Label;
-import javafx.scene.control.ListView;
-import javafx.scene.control.MenuItem;
-import javafx.scene.control.TitledPane;
-import javafx.scene.control.Tooltip;
+import javafx.scene.control.*;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
 import org.carlfx.cognitive.loader.InjectViewModel;
 import org.carlfx.cognitive.viewmodel.SimpleViewModel;
 import org.slf4j.Logger;
@@ -38,6 +28,13 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Optional;
 import java.util.function.Function;
+
+import static dev.ikm.komet.kview.controls.KometIcon.IconValue.PLUS;
+import static dev.ikm.komet.kview.controls.KometIcon.IconValue.TRASH;
+import static dev.ikm.komet.kview.mvvm.view.navigation.PatternNavEntryController.PatternNavEntry.INSTANCES;
+import static dev.ikm.komet.kview.mvvm.view.navigation.PatternNavEntryController.PatternNavEntry.PATTERN_FACADE;
+import static dev.ikm.komet.kview.mvvm.viewmodel.FormViewModel.CURRENT_JOURNAL_WINDOW_TOPIC;
+import static dev.ikm.komet.kview.mvvm.viewmodel.FormViewModel.VIEW_PROPERTIES;
 
 public class PatternNavEntryController {
     private static final Logger LOG = LoggerFactory.getLogger(PatternNavEntryController.class);
@@ -52,6 +49,9 @@ public class PatternNavEntryController {
 
     @FXML
     private HBox semanticElementHBox;
+
+    @FXML
+    private VBox mainVBox;
 
     @FXML
     private ImageView identicon;
@@ -85,6 +85,16 @@ public class PatternNavEntryController {
         patternEntryHBox.setOnMouseExited(mouseEvent -> {
             if (!contextMenu.isShowing()) {
                 dragHandleAffordance.setVisible(false);
+            }
+        });
+
+        instancesTitledPane.expandedProperty().addListener((obs, wasExpanded, isNowExpanded) -> {
+            if (isNowExpanded) {
+                if (!mainVBox.getStyleClass().contains("search-entry-title-pane-pattern")) {
+                    mainVBox.getStyleClass().add("search-entry-title-pane-pattern");
+                }
+            } else {
+                mainVBox.getStyleClass().remove("search-entry-title-pane-pattern");
             }
         });
 
@@ -129,9 +139,12 @@ public class PatternNavEntryController {
             // double left click creates the concept window
             if (mouseEvent.getButton().equals(MouseButton.PRIMARY)) {
                 if (mouseEvent.getClickCount() == 2) {
+                    ViewProperties viewProperties = instancesViewModel.getPropertyValue(VIEW_PROPERTIES);
+                    var newViewProperties = viewProperties.parentView().makeOverridableViewProperties("PatternNavEntryController.initialize.patternEntryHBoxOnMouseClicked");
+
                     EvtBusFactory.getDefaultEvtBus().publish(instancesViewModel.getPropertyValue(CURRENT_JOURNAL_WINDOW_TOPIC),
                             new MakePatternWindowEvent(this,
-                                    MakePatternWindowEvent.OPEN_PATTERN, instancesViewModel.getPropertyValue(PATTERN_FACADE), instancesViewModel.getPropertyValue(VIEW_PROPERTIES)));
+                                    MakePatternWindowEvent.OPEN_PATTERN, instancesViewModel.getPropertyValue(PATTERN_FACADE), newViewProperties));
                 }
             }
         });
@@ -154,35 +167,31 @@ public class PatternNavEntryController {
             // double click creates the concept window
             if (mouseEvent.getButton().equals(MouseButton.PRIMARY)) {
                 if (mouseEvent.getClickCount() == 2) {
-                    System.out.println(" selected row class = " + patternInstancesListView.getSelectionModel().getSelectedItem().getClass());
-                    System.out.println(" selected row value = " + patternInstancesListView.getSelectionModel().getSelectedItem());
-                    System.out.println("    pick item = " + mouseEvent.getPickResult().getIntersectedNode());
                     if (patternInstancesListView.getSelectionModel().getSelectedItem() instanceof Integer nid) {
+                        ViewProperties viewProperties = instancesViewModel.getPropertyValue(VIEW_PROPERTIES);
+                        var newViewProperties = viewProperties.parentView().makeOverridableViewProperties("PatternNavEntryController.initialize.patternInstancesListViewOnMouseClicked");
 
                         EntityFacade semanticChronology = EntityService.get().getEntity(nid).get();
                         EvtBusFactory.getDefaultEvtBus().publish(instancesViewModel.getPropertyValue(CURRENT_JOURNAL_WINDOW_TOPIC),
                                 new MakeGenEditingWindowEvent(this,
-                                        MakeGenEditingWindowEvent.OPEN_GEN_EDIT, semanticChronology, instancesViewModel.getPropertyValue(VIEW_PROPERTIES)));
+                                        MakeGenEditingWindowEvent.OPEN_GEN_EDIT, semanticChronology, newViewProperties));
                     }
                 }
             }
         });
 
         ViewProperties viewProperties = instancesViewModel.getPropertyValue(VIEW_PROPERTIES);
-        Function<Integer, String> fetchDescriptionByNid = (nid -> {
-            // "[Reference Component] in [Pattern]"
-            String descr = "";
-            if (EntityService.get().getEntity(nid).get() instanceof SemanticEntity semanticEntity) {
-                EntityFacade refComponent = EntityService.get().getEntity(semanticEntity.referencedComponentNid()).get();
-                PatternFacade patternFacade = semanticEntity.pattern().toProxy();
-                descr = "[" + viewProperties.calculator().languageCalculator().getDescriptionText(refComponent.nid()).get() + "] in [";
-                descr += viewProperties.calculator().languageCalculator().getDescriptionTextOrNid(patternFacade.nid()) + "]";
-            }
-            return descr;
+
+        // generate the display name in the format of "Reference Component in Pattern"
+        Function<Integer, String> fetchDescription = (semanticNid -> {
+            SemanticEntity semanticEntity = (SemanticEntity) EntityService.get().getEntity(semanticNid).get();
+            EntityFacade refComponent = EntityService.get().getEntity(semanticEntity.referencedComponentNid()).get();
+            String refComponentName = viewProperties.calculator().languageCalculator().getPreferredDescriptionTextWithFallbackOrNid(refComponent.nid());
+            return refComponentName + " in " + retriveDisplayName(instancesViewModel.getPropertyValue(PATTERN_FACADE));
         });
-        Function<EntityFacade, String> fetchDescriptionByFacade = (facade -> viewProperties.calculator().getPreferredDescriptionTextWithFallbackOrNid(facade));
-        // set the cell factory for each pattern's instances list
-        patternInstancesListView.setCellFactory(_ -> new PatternSemanticListCell(fetchDescriptionByNid, fetchDescriptionByFacade, viewProperties));
+
+        // set the cell factory for each pattern's instance list
+        patternInstancesListView.setCellFactory(_ -> new PatternSemanticListCell(fetchDescription, viewProperties));
 
         // display each row (ListCell) of this ListView
         Platform.runLater(() ->{

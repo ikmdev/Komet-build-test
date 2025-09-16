@@ -15,10 +15,15 @@
  */
 package dev.ikm.komet.kview.mvvm.viewmodel;
 
+import static dev.ikm.komet.kview.mvvm.viewmodel.stamp.StampFormViewModelBase.Properties.IS_CONFIRMED_OR_SUBMITTED;
+import static dev.ikm.komet.kview.mvvm.viewmodel.stamp.StampFormViewModelBase.Properties.STATUS;
+import static dev.ikm.tinkar.coordinate.stamp.StampFields.MODULE;
+import static dev.ikm.tinkar.coordinate.stamp.StampFields.PATH;
 import dev.ikm.komet.framework.builder.AxiomBuilderRecord;
 import dev.ikm.komet.framework.builder.ConceptEntityBuilder;
 import dev.ikm.komet.framework.view.ViewProperties;
 import dev.ikm.komet.kview.mvvm.model.DescrName;
+import dev.ikm.komet.kview.mvvm.viewmodel.stamp.StampFormViewModelBase;
 import dev.ikm.tinkar.common.id.PublicId;
 import dev.ikm.tinkar.common.id.PublicIds;
 import dev.ikm.tinkar.common.service.TinkExecutor;
@@ -41,8 +46,8 @@ import dev.ikm.tinkar.terms.EntityFacade;
 import dev.ikm.tinkar.terms.EntityProxy;
 import dev.ikm.tinkar.terms.State;
 import dev.ikm.tinkar.terms.TinkarTerm;
-import javafx.beans.property.ReadOnlyObjectProperty;
 import javafx.beans.property.ReadOnlyStringProperty;
+import javafx.collections.ObservableList;
 import org.carlfx.cognitive.validator.MessageType;
 import org.carlfx.cognitive.validator.ValidationMessage;
 import org.carlfx.cognitive.viewmodel.ViewModel;
@@ -58,11 +63,6 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 
-import static dev.ikm.komet.kview.mvvm.viewmodel.DescrNameViewModel.NAME_TEXT;
-import static dev.ikm.komet.kview.mvvm.viewmodel.DescrNameViewModel.NAME_TYPE;
-import static dev.ikm.tinkar.coordinate.stamp.StampFields.MODULE;
-import static dev.ikm.tinkar.coordinate.stamp.StampFields.PATH;
-
 public class ConceptViewModel extends FormViewModel {
     private static final Logger LOG = LoggerFactory.getLogger(ConceptViewModel.class);
 
@@ -70,7 +70,7 @@ public class ConceptViewModel extends FormViewModel {
     // Known properties
     // --------------------------------------------
     public static String CURRENT_ENTITY = "entityFacade";
-    public static String FULLY_QUALIFIED_NAME = "fqn";
+    public static String FULLY_QUALIFIED_NAMES = "fullyQualifiedNames";
     public static String CONCEPT_STAMP_VIEW_MODEL = "stampViewModel";
     public static String OTHER_NAMES = "otherNames";
 
@@ -83,7 +83,7 @@ public class ConceptViewModel extends FormViewModel {
     public ConceptViewModel() {
         super(); // addProperty(MODE, VIEW); By default
         addProperty(CURRENT_ENTITY, (EntityFacade) null)
-                .addProperty(FULLY_QUALIFIED_NAME, (Object) null)
+                .addProperty(FULLY_QUALIFIED_NAMES,  (Collection) new ArrayList<>())
                 .addProperty(OTHER_NAMES, (Collection) new ArrayList<>())
                 .addProperty(CONCEPT_STAMP_VIEW_MODEL, (ViewModel) null)
                 .addProperty(AXIOM, (String) null);
@@ -91,20 +91,15 @@ public class ConceptViewModel extends FormViewModel {
         //FIXME add a STAMP validator
 
         // In Create Mode the fqn is required.
-        addValidator(FULLY_QUALIFIED_NAME, "Fully Qualified Name",(ReadOnlyObjectProperty prop, ViewModel vm) -> {
-            if (prop.isNull().get()
-                    || prop.get() instanceof DescrNameViewModel fqnViewModel
-                    && fqnViewModel.getPropertyValue(NAME_TYPE) != TinkarTerm.FULLY_QUALIFIED_NAME_DESCRIPTION_TYPE
-                    && fqnViewModel.getPropertyValue(NAME_TEXT) != null
-                    && fqnViewModel.getPropertyValue(NAME_TEXT).toString().isBlank()) {
-
-                return new ValidationMessage(FULLY_QUALIFIED_NAME, MessageType.ERROR, "${%s} is required".formatted(FULLY_QUALIFIED_NAME));
+        addValidator(FULLY_QUALIFIED_NAMES, "Fully Qualified Names",(ObservableList<?> observableList, ViewModel _ ) -> {
+            if (observableList.isEmpty()){
+                return new ValidationMessage(FULLY_QUALIFIED_NAMES, MessageType.ERROR, "${%s} is required".formatted(FULLY_QUALIFIED_NAMES));
             }
             return VALID;
         });
 
         // Axiom should be selected
-        addValidator(AXIOM, "Axiom",(ReadOnlyStringProperty prop, ViewModel vm) -> {
+        addValidator(AXIOM, "Axiom",(ReadOnlyStringProperty prop, ViewModel _ ) -> {
             if (prop.isNull().get()
                     || (prop.get() instanceof String axiom
                     && !(SUFFICIENT_SET.equals(axiom) || NECESSARY_SET.equals(axiom)))) {
@@ -112,25 +107,15 @@ public class ConceptViewModel extends FormViewModel {
             }
             return VALID;
         });
-
-//        addValidator("isReadyToCreate", (vm) ->
-//                vm.getPropertyValue("mode").equals(CREATE)
-//                        && vm.getPropertyValue("axiom").isEmpty()
-//                        && vm.getPropertyValue("fqn").isEmpty()
-//                        ? new ValidationMessage(ERROR, "Must have a ${fqn} & ${axiom} to create")
-//                        : VALID);
-
-
     }
 
     /**
      * Validates the view model and if there are no errors, save to the database.
      * Is called everytime user is adding data to ConceptViewModel.
      *
-     * @param editCoordinate
      * @return
      */
-    public boolean createConcept(EditCoordinateRecord editCoordinate) {
+    public boolean createConcept(StampFormViewModelBase stampFormViewModel) {
         save(); // View Model xfer values. does not save to the database but validates data and then copies data from properties to model values.
 
         // Validation errors will not create record.
@@ -138,26 +123,29 @@ public class ConceptViewModel extends FormViewModel {
             return false;
         }
 
-        // stamp exists and is populated?
-        StampViewModel stampViewModel = getValue(CONCEPT_STAMP_VIEW_MODEL);
-        if (stampViewModel != null) {
-            stampViewModel.save(); // View Model xfer values
-            if (!stampViewModel.getValidationMessages().isEmpty()) {
-                return false;
-            }
-        } else {
+        // stamp is populated?
+        if (!(Boolean)stampFormViewModel.getPropertyValue(IS_CONFIRMED_OR_SUBMITTED)) {
             return false;
         }
 
         // Create concept
-        DescrName fqnDescrName = getPropertyValue(FULLY_QUALIFIED_NAME);
+        List<DescrName> fqnList = getObservableList(FULLY_QUALIFIED_NAMES);
+        DescrName fqnDescrName = fqnList.get(0);
         Transaction transaction = Transaction.make("New concept for: " + fqnDescrName.getNameText());
 
-        // Copy STAMP info
-        ConceptEntity module = stampViewModel.getValue(MODULE);
-        ConceptEntity path = stampViewModel.getValue(PATH);
 
-        StampEntity stampEntity = transaction.getStamp(State.ACTIVE, editCoordinate.getAuthorNidForChanges(),
+        // Copy STAMP info
+        // - status
+        State status = stampFormViewModel.getValue(STATUS);
+        // - getAuthor from editCoordinate
+        ViewProperties viewProperties = getViewProperties();
+        EntityFacade authorConcept = viewProperties.nodeView().editCoordinate().getAuthorForChanges();
+        // - module
+        ConceptEntity module = stampFormViewModel.getValue(MODULE);
+        // - path
+        ConceptEntity path = stampFormViewModel.getValue(PATH);
+
+        StampEntity stampEntity = transaction.getStamp(status, authorConcept.nid(),
                 module.nid(), path.nid());
 
         ConceptEntityBuilder newConceptBuilder = ConceptEntityBuilder.builder(stampEntity);
@@ -169,7 +157,7 @@ public class ConceptViewModel extends FormViewModel {
         ConceptFacade conceptFacade = EntityProxy.Concept.make(conceptRecord.publicId()) ;
 
         // add the Fully Qualified Name to the new concept
-        saveFQNwithinCreateConcept(transaction, stampEntity, getValue(FULLY_QUALIFIED_NAME), conceptFacade);
+        saveFQNwithinCreateConcept(transaction, stampEntity, fqnDescrName, conceptFacade);
 
 
         AxiomBuilderRecord ab = newConceptBuilder.axiomBuilder();
@@ -335,7 +323,7 @@ public class ConceptViewModel extends FormViewModel {
         StampEntity stampEntity = transaction.getStamp(
                 State.fromConcept(otherName.getStatus()), // active, inactive, etc
                 System.currentTimeMillis(),
-                TinkarTerm.USER.nid(),
+                getViewProperties().nodeView().editCoordinate().getAuthorForChanges().nid(),
                 otherName.getModule().nid(), // SNOMED CT, LOINC, etc
                 TinkarTerm.DEVELOPMENT_PATH.nid()); // Should this be defaulted???
 

@@ -15,12 +15,11 @@
  */
 package dev.ikm.komet.kview.mvvm.viewmodel;
 
+import static dev.ikm.komet.kview.mvvm.viewmodel.stamp.StampFormViewModelBase.Properties.AUTHOR;
+import static dev.ikm.komet.kview.mvvm.viewmodel.stamp.StampFormViewModelBase.Properties.MODULE;
+import static dev.ikm.komet.kview.mvvm.viewmodel.stamp.StampFormViewModelBase.Properties.PATH;
+import static dev.ikm.komet.kview.mvvm.viewmodel.stamp.StampFormViewModelBase.Properties.STATUS;
 import static dev.ikm.tinkar.common.service.PrimitiveData.PREMUNDANE_TIME;
-import static dev.ikm.tinkar.coordinate.stamp.StampFields.AUTHOR;
-import static dev.ikm.tinkar.coordinate.stamp.StampFields.MODULE;
-import static dev.ikm.tinkar.coordinate.stamp.StampFields.PATH;
-import static dev.ikm.tinkar.coordinate.stamp.StampFields.STATUS;
-import static dev.ikm.tinkar.coordinate.stamp.StampFields.TIME;
 import static dev.ikm.tinkar.terms.EntityProxy.Pattern;
 import static dev.ikm.tinkar.terms.TinkarTerm.ACCEPTABLE;
 import static dev.ikm.tinkar.terms.TinkarTerm.DEFINITION_DESCRIPTION_TYPE;
@@ -29,17 +28,17 @@ import dev.ikm.komet.framework.view.ViewProperties;
 import dev.ikm.komet.kview.mvvm.model.DescrName;
 import dev.ikm.komet.kview.mvvm.model.PatternDefinition;
 import dev.ikm.komet.kview.mvvm.model.PatternField;
+import dev.ikm.komet.kview.mvvm.viewmodel.stamp.StampFormViewModelBase;
 import dev.ikm.tinkar.common.id.PublicId;
 import dev.ikm.tinkar.common.id.PublicIds;
-import dev.ikm.tinkar.component.Stamp;
 import dev.ikm.tinkar.composer.Composer;
 import dev.ikm.tinkar.composer.Session;
 import dev.ikm.tinkar.composer.assembler.PatternAssembler;
+import dev.ikm.tinkar.composer.assembler.PatternAssemblerConsumer;
 import dev.ikm.tinkar.composer.template.FullyQualifiedName;
 import dev.ikm.tinkar.composer.template.Synonym;
 import dev.ikm.tinkar.composer.template.USDialect;
 import dev.ikm.tinkar.coordinate.stamp.calculator.Latest;
-import dev.ikm.tinkar.coordinate.stamp.calculator.StampCalculator;
 import dev.ikm.tinkar.coordinate.view.calculator.ViewCalculator;
 import dev.ikm.tinkar.entity.ConceptEntity;
 import dev.ikm.tinkar.entity.ConceptRecord;
@@ -130,6 +129,8 @@ public class PatternViewModel extends FormViewModel {
 
     public static String PATTERN_TITLE_TEXT = "patternTitleText";
 
+    public static String PUBLISH_PENDING = "publishPending";
+
     // Used to load the values in the PatternField controller from PatternDetailsController.
     public static String SELECTED_PATTERN_FIELD = "selectedPatternField";
 
@@ -144,9 +145,8 @@ public class PatternViewModel extends FormViewModel {
                     .addProperty(PATTERN_TITLE_TEXT, "")
                     .addProperty(PATTERN_TOPIC, (UUID) null)
                     .addProperty(STATE_MACHINE, (StateMachine) null)
-                    .addProperty(STAMP_VIEW_MODEL, (ViewModel) null)
+                    .addProperty(STAMP_VIEW_MODEL, (StampFormViewModelBase) null)
                     .addProperty(FQN_DESCRIPTION_NAME, (DescrName) null)
-                    .addProperty(FQN_DATE_ADDED_STR, "")
                     .addProperty(OTHER_NAMES, new ArrayList<DescrName>())
                     .addProperty(OTHER_NAME_SEMANTIC_VERSION_MAP, new HashMap<DescrName, SemanticEntityVersion>())
                     // PATTERN>DEFINITION Purpose and Meaning
@@ -156,6 +156,7 @@ public class PatternViewModel extends FormViewModel {
                     .addProperty(MEANING_TEXT, "")
                     .addProperty(PURPOSE_DATE_STR, "")
                     .addProperty(MEANING_DATE_STR, "")
+                    .addProperty(PUBLISH_PENDING,false)
                     // PATTERN>DESCRIPTION FQN and Other Name
                     .addProperty(FQN_DESCRIPTION_NAME_TEXT, "")
                     // Ordered collection of Fields
@@ -169,10 +170,10 @@ public class PatternViewModel extends FormViewModel {
                         ObjectProperty<EntityFacade> purposeEntity = viewModel.getProperty(PURPOSE_ENTITY);
                         ObjectProperty<EntityFacade> meaningEntity = viewModel.getProperty(MEANING_ENTITY);
                         ObjectProperty<DescrName> fqnProperty = viewModel.getProperty(FQN_DESCRIPTION_NAME);
-                        ViewModel stampViewModel = viewModel.getPropertyValue(STAMP_VIEW_MODEL);
-                        ObjectProperty<?> stampModule = stampViewModel.getProperty(MODULE);
-                        ObjectProperty<?> stampPath = stampViewModel.getProperty(PATH);
-                        ObjectProperty<?> stampStatus = stampViewModel.getProperty(STATUS);
+                        StampFormViewModelBase stampFormViewModel = viewModel.getPropertyValue(STAMP_VIEW_MODEL);
+                        ObjectProperty<?> stampModule = stampFormViewModel.getProperty(MODULE);
+                        ObjectProperty<?> stampPath = stampFormViewModel.getProperty(PATH);
+                        ObjectProperty<?> stampStatus = stampFormViewModel.getProperty(STATUS);
                         // reset the error list on each validation check
                         vr.getMessages().clear();
                         if (purposeEntity.isNull().get()) {
@@ -212,6 +213,7 @@ public class PatternViewModel extends FormViewModel {
         if (meaningFacade != null) {
             setPropertyValue(MEANING_TEXT, meaningFacade.description());
         }
+        setPropertyValue(PUBLISH_PENDING, true);
     }
 
     public void reLoadPatternValues(){
@@ -300,6 +302,10 @@ public class PatternViewModel extends FormViewModel {
             // regenerate with updated
             baselineOtherNameHashMap = generateOtherNameHash();
         }
+
+        // Reload STAMP Form View Model
+        StampFormViewModelBase stampFormViewModel = getPropertyValue(STAMP_VIEW_MODEL);
+        stampFormViewModel.update(patternFacade, getPropertyValue(PATTERN_TOPIC), getViewProperties());
     }
 
     private void loadFqnDetails(EntityFacade patternFacade) {
@@ -350,10 +356,10 @@ public class PatternViewModel extends FormViewModel {
         Composer composer = new Composer("Save Pattern Definition");
 
         // get the STAMP values from the nested stampViewModel
-        StampViewModel stampViewModel = getPropertyValue(STAMP_VIEW_MODEL);
-        State state = stampViewModel.getPropertyValue(STATUS);
+        StampFormViewModelBase stampFormViewModel = getPropertyValue(STAMP_VIEW_MODEL);
+        State state = stampFormViewModel.getPropertyValue(STATUS);
 
-        Object authorObject = stampViewModel.getPropertyValue(AUTHOR);
+        Object authorObject = stampFormViewModel.getPropertyValue(AUTHOR);
         EntityProxy.Concept authorConcept = null;
         if (authorObject instanceof EntityProxy.Concept) {
             authorConcept = (EntityProxy.Concept) authorObject;
@@ -361,8 +367,8 @@ public class PatternViewModel extends FormViewModel {
             authorConcept = EntityProxy.Concept.make(authorConceptRecord.nid());
         }
 
-        ConceptEntity module = stampViewModel.getPropertyValue(MODULE);
-        ConceptEntity path = stampViewModel.getPropertyValue(PATH);
+        ConceptEntity module = stampFormViewModel.getPropertyValue(MODULE);
+        ConceptEntity path = stampFormViewModel.getPropertyValue(PATH);
         Session session = composer.open(state, authorConcept, module.toProxy(), path.toProxy());
         EntityProxy.Concept conceptEntityMeaning = EntityProxy.Concept.make(((EntityFacade)getPropertyValue(MEANING_ENTITY)).nid());
         EntityProxy.Concept conceptEntityPurpose = EntityProxy.Concept.make(((EntityFacade)getPropertyValue(PURPOSE_ENTITY)).nid());
@@ -403,25 +409,39 @@ public class PatternViewModel extends FormViewModel {
                 }
             });
         } else {
-            /*
-            only write a fqn version IF there is a change to
-                - FQN language,
-                - FQN case significance,
-                - FQN text (description),
-                - FQN status
-                - path
-                - module
-             */
-            if (generateFqnHash() != changeHash) {
-
-                session.compose(new FullyQualifiedName()
-                                .semantic(fqnProp.get())
-                                .language(((EntityFacade) getPropertyValue(FQN_LANGUAGE)).toProxy())
-                                .text(getPropertyValue(FQN_DESCRIPTION_NAME_TEXT))
-                                .caseSignificance(((EntityFacade) getPropertyValue(FQN_CASE_SIGNIFICANCE)).toProxy()),
-                        pattern
-                );
-            }
+            // only write when there is change in Semantic meaning or Semantic purpose
+            session.compose((PatternAssemblerConsumer) patternAssembler -> {
+                patternAssembler
+                        .pattern(pattern)
+                        .meaning(conceptEntityMeaning)
+                        .purpose(conceptEntityPurpose);
+                     /*
+                        only write a fqn version IF there is a change to
+                            - FQN language,
+                            - FQN case significance,
+                            - FQN text (description),
+                            - FQN status
+                            - path
+                            - module
+                     */
+                    if (generateFqnHash() != changeHash) {
+                        patternAssembler.attach((FullyQualifiedName fqn) -> fqn
+                                        .semantic(fqnProp.get())
+                                        .language(((EntityFacade) getPropertyValue(FQN_LANGUAGE)).toProxy())
+                                        .text(getPropertyValue(FQN_DESCRIPTION_NAME_TEXT))
+                                        .caseSignificance(((EntityFacade) getPropertyValue(FQN_CASE_SIGNIFICANCE)).toProxy())
+                                .attach(new USDialect().acceptability(ACCEPTABLE))
+                        );
+                    }
+                    // add the field definitions
+                    for (int i = 0; i < fieldsProperty.size(); i++) {
+                        PatternField patternField = fieldsProperty.get(i);
+                        EntityProxy.Concept conceptEntityFieldMeaning = EntityProxy.Concept.make(patternField.meaning().nid());
+                        EntityProxy.Concept conceptEntityFieldPurpose = EntityProxy.Concept.make(patternField.purpose().nid());
+                        EntityProxy.Concept conceptEntityFieldDatatype = EntityProxy.Concept.make(patternField.dataType().nid());
+                        patternAssembler.fieldDefinition(conceptEntityFieldMeaning, conceptEntityFieldPurpose, conceptEntityFieldDatatype, i);
+                    }
+            });
         }
 
 
@@ -501,21 +521,4 @@ public class PatternViewModel extends FormViewModel {
     public ViewProperties getViewProperties() {
         return getPropertyValue(VIEW_PROPERTIES);
     }
-
-    public void updateStamp() {
-        EntityFacade patternFacade = getPropertyValue(PATTERN);
-        StampCalculator stampCalculator = getViewProperties().calculator().stampCalculator();
-
-        StampViewModel stampViewModel = getPropertyValue(STAMP_VIEW_MODEL);
-
-        Stamp stamp = stampCalculator.latest(patternFacade).get().stamp();
-        stampViewModel.setPropertyValue(STATUS, stamp.state());
-        stampViewModel.setPropertyValue(TIME, stamp.time());
-        stampViewModel.setPropertyValue(AUTHOR, stamp.author());
-        stampViewModel.setPropertyValue(MODULE, stamp.module());
-        stampViewModel.setPropertyValue(PATH, stamp.path());
-    }
-
-
-
 }

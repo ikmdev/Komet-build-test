@@ -47,5 +47,8 @@ module dev.ikm.komet.kview.test {
     exports dev.ikm.komet.kview.mvvm.viewmodel.test;
     opens dev.ikm.komet.kview.mvvm.viewmodel.test;
 
-    uses dev.ikm.komet.framework.events.EvtBus;
+    exports dev.ikm.komet.kview.mvvm.view.changeset.exchange.test;
+    opens dev.ikm.komet.kview.mvvm.view.changeset.exchange.test;
+
+    uses dev.ikm.tinkar.events.EvtBus;
 }

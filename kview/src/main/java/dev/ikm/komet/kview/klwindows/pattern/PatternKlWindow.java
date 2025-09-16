@@ -52,34 +52,19 @@ public class PatternKlWindow extends AbstractEntityChapterKlWindow {
                            ViewProperties viewProperties, KometPreferences preferences) {
         super(journalTopic, entityFacade, viewProperties, preferences);
 
-        // Initialize stampsViewModel with basic data.
-        StampViewModel stampViewModel = new StampViewModel();
-        stampViewModel.setPropertyValue(PATHS_PROPERTY, fetchDescendentsOfConcept(viewProperties, TinkarTerm.PATH.publicId()), true)
-                .setPropertyValue(MODULES_PROPERTY, fetchDescendentsOfConcept(viewProperties, TinkarTerm.MODULE.publicId()), true);
-
         String mode;
         if (entityFacade != null) {
             mode = EDIT;
-            Entity patternEntity = EntityService.get().getEntity(entityFacade.nid()).get();
-            // Populate STAMP values
-            Latest<EntityVersion> patternStamp = viewProperties.calculator().stampCalculator().latest(patternEntity);
-            stampViewModel.setPropertyValue(STATUS, patternStamp.get().stamp().state())
-                    .setPropertyValue(TIME, patternStamp.get().stamp().time())
-                    .setPropertyValue(AUTHOR, TinkarTerm.USER)
-                    .setPropertyValue(MODULE, patternStamp.get().stamp().module())
-                    .setPropertyValue(PATH, patternStamp.get().stamp().path())
-            ;
         } else {
             mode = CREATE;
         }
-        stampViewModel.setPropertyValue(MODE, mode);
+
         // Prefetch modules and paths for view to populate radio buttons in form. Populate from database
         StateMachine patternSM = StateMachine.create(new PatternDetailsPattern());
         Config patternConfig = new Config(PatternDetailsController.class.getResource("pattern-details.fxml"))
                 .updateViewModel("patternViewModel", (PatternViewModel patternViewModel) ->
                         patternViewModel.setPropertyValue(VIEW_PROPERTIES, viewProperties)
                                 .setPropertyValue(MODE, mode)
-                                .setPropertyValue(STAMP_VIEW_MODEL, stampViewModel)
                                 .setPropertyValue(PATTERN_TOPIC, getWindowTopic())
                                 .setPropertyValue(STATE_MACHINE, patternSM)
                                 .setPropertyValue(CURRENT_JOURNAL_WINDOW_TOPIC, journalTopic)
@@ -122,5 +107,15 @@ public class PatternKlWindow extends AbstractEntityChapterKlWindow {
     @Override
     protected void setPropertyPanelOpen(boolean isOpen) {
         jfxNode.controller().setPropertiesPanelOpen(isOpen);
+    }
+
+    @Override
+    protected String selectedPropertyPanel() {
+        return jfxNode.controller().getPropertiesController().selectedView();
+    }
+
+    @Override
+    protected void setSelectedPropertyPanel(String pane) {
+        jfxNode.controller().getPropertiesController().restoreSelectedView(pane);
     }
 }

@@ -15,12 +15,36 @@
  */
 package dev.ikm.komet.kview.mvvm.view.properties;
 
-import dev.ikm.komet.framework.events.EvtBus;
-import dev.ikm.komet.framework.events.EvtBusFactory;
-import dev.ikm.komet.framework.events.Subscriber;
+import static dev.ikm.komet.kview.events.StampEvent.ADD_STAMP;
+import static dev.ikm.komet.kview.events.StampEvent.CREATE_STAMP;
+import static dev.ikm.komet.kview.fxutils.CssHelper.genText;
+import static dev.ikm.komet.kview.mvvm.viewmodel.DescrNameViewModel.CASE_SIGNIFICANCE;
+import static dev.ikm.komet.kview.mvvm.viewmodel.DescrNameViewModel.IS_SUBMITTED;
+import static dev.ikm.komet.kview.mvvm.viewmodel.DescrNameViewModel.LANGUAGE;
+import static dev.ikm.komet.kview.mvvm.viewmodel.DescrNameViewModel.MODULE;
+import static dev.ikm.komet.kview.mvvm.viewmodel.DescrNameViewModel.NAME_TEXT;
+import static dev.ikm.komet.kview.mvvm.viewmodel.DescrNameViewModel.PARENT_PUBLIC_ID;
+import static dev.ikm.komet.kview.mvvm.viewmodel.DescrNameViewModel.STATUS;
+import static dev.ikm.komet.kview.mvvm.viewmodel.OtherNameViewModel.OtherNameProperties.DESCRIPTION_CASE_SIGNIFICANCE;
+import static dev.ikm.komet.kview.mvvm.viewmodel.OtherNameViewModel.OtherNameProperties.DESCRIPTION_LANGUAGE;
+import static dev.ikm.komet.kview.mvvm.viewmodel.OtherNameViewModel.OtherNameProperties.HAS_OTHER_NAME;
+import static dev.ikm.komet.kview.mvvm.viewmodel.stamp.StampFormViewModelBase.Type.CONCEPT;
 import dev.ikm.komet.framework.view.ViewProperties;
-import dev.ikm.komet.kview.events.*;
+import dev.ikm.komet.kview.mvvm.view.common.StampFormController;
+import dev.ikm.komet.kview.events.AddFullyQualifiedNameEvent;
+import dev.ikm.komet.kview.events.AddOtherNameToConceptEvent;
+import dev.ikm.komet.kview.events.EditConceptFullyQualifiedNameEvent;
+import dev.ikm.komet.kview.events.EditOtherNameConceptEvent;
+import dev.ikm.komet.kview.events.OpenPropertiesPanelEvent;
+import dev.ikm.komet.kview.events.ShowEditDescriptionPanelEvent;
+import dev.ikm.komet.kview.events.StampEvent;
+import dev.ikm.komet.kview.mvvm.viewmodel.stamp.StampAddSubmitFormViewModel;
+import dev.ikm.komet.kview.mvvm.viewmodel.stamp.StampCreateFormViewModel;
+import dev.ikm.komet.kview.mvvm.viewmodel.stamp.StampFormViewModelBase;
 import dev.ikm.tinkar.common.id.PublicId;
+import dev.ikm.tinkar.events.EvtBus;
+import dev.ikm.tinkar.events.EvtBusFactory;
+import dev.ikm.tinkar.events.Subscriber;
 import dev.ikm.tinkar.terms.EntityFacade;
 import dev.ikm.tinkar.terms.TinkarTerm;
 import javafx.event.ActionEvent;
@@ -34,6 +58,7 @@ import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.StackPane;
 import javafx.scene.shape.SVGPath;
+import org.carlfx.cognitive.loader.Config;
 import org.carlfx.cognitive.loader.FXMLMvvmLoader;
 import org.carlfx.cognitive.loader.JFXNode;
 import org.slf4j.Logger;
@@ -43,15 +68,13 @@ import java.io.IOException;
 import java.io.Serializable;
 import java.util.UUID;
 
-import static dev.ikm.komet.kview.fxutils.CssHelper.genText;
-import static dev.ikm.komet.kview.mvvm.viewmodel.DescrNameViewModel.*;
-
 /**
  * The properties window providing tabs of Edit, Hierarchy, History, and Comments.
  * This view is associated with the view file history-change-selection.fxml.
  */
 public class PropertiesController implements Serializable {
     private static final Logger LOG = LoggerFactory.getLogger(PropertiesController.class);
+
     protected static final String HISTORY_CHANGE_FXML_FILE = "history-change-selection.fxml";
     protected static final String HIERARCHY_VIEW_FXML_FILE = "hierarchy-view.fxml";
 
@@ -88,6 +111,7 @@ public class PropertiesController implements Serializable {
     @FXML
     private FlowPane propertiesTabsPane;
 
+    private JFXNode<Pane, StampFormController> stampJFXNode;
     private Pane historyTabsBorderPane;
     private HistoryChangeController historyChangeController;
 
@@ -138,17 +162,30 @@ public class PropertiesController implements Serializable {
 
     private Subscriber<ShowEditDescriptionPanelEvent> editDescriptionPaneSubscriber;
 
+    private Subscriber<StampEvent> addStampSubscriber;
+
+    private Subscriber<StampEvent> createStampSubscriber;
+
     private Subscriber<OpenPropertiesPanelEvent> propsPanelOpen;
 
 
     private UUID conceptTopic;
 
+    private boolean hasOtherNames = false;
+
+    private StampAddSubmitFormViewModel stampAddSubmitFormViewModel;
+
+    private StampCreateFormViewModel stampCreateFormViewModel;
+
+    private boolean editMode;
 
     public PropertiesController() {
     }
 
     public PropertiesController(UUID conceptTopic) {
         this.conceptTopic = conceptTopic;
+        this.stampAddSubmitFormViewModel = new StampAddSubmitFormViewModel(CONCEPT);
+        this.stampCreateFormViewModel = new StampCreateFormViewModel(CONCEPT);
     }
 
     /**
@@ -159,6 +196,10 @@ public class PropertiesController implements Serializable {
         clearView();
 
         eventBus = EvtBusFactory.getDefaultEvtBus();
+
+        // Load Stamp add View Panel (FXML & Controller)
+        Config stampConfig = new Config(StampFormController.class.getResource(StampFormController.STAMP_FORM_FXML_FILE));
+        stampJFXNode = FXMLMvvmLoader.make(stampConfig);
 
         // Load History tabs View Panel (FXML & Controller)
         FXMLLoader loader = new FXMLLoader(getClass().getResource(HISTORY_CHANGE_FXML_FILE));
@@ -240,7 +281,13 @@ public class PropertiesController implements Serializable {
                             .setValue(MODULE, null)
                             .setValue(LANGUAGE, null)
                             .setValue(STATUS, TinkarTerm.ACTIVE_STATE)
-                            .setValue(IS_SUBMITTED, false);
+                            .setValue(IS_SUBMITTED, false)
+
+                            .setValue(DESCRIPTION_CASE_SIGNIFICANCE, addFullyQualifiedNameController.getViewModel().getValue(CASE_SIGNIFICANCE))
+                            .setValue(DESCRIPTION_LANGUAGE, addFullyQualifiedNameController.getViewModel().getValue(LANGUAGE))
+
+                            .setValue(HAS_OTHER_NAME, hasOtherNames);
+
                     // if in edit mode and navigating from the properties > edit > add other name
                     // then the public id will be set
                     if (evt.getPublicId() != null) {
@@ -287,13 +334,13 @@ public class PropertiesController implements Serializable {
             if (!contentBorderPane.getCenter().equals(editFqnPane)) {
                 editFullyQualifiedNameController.updateModel(getViewProperties(), null);
                 contentBorderPane.setCenter(editFqnPane);
-                editButton.setSelected(true);
-                editButton.setText("EDIT");
-                if (evt.getPublicId() != null) {
-                    editFullyQualifiedNameController.setConceptAndPopulateForm(evt.getPublicId());
-                }else {
-                    editFullyQualifiedNameController.setConceptAndPopulateForm(evt.getDescrName());
-                }
+            }
+            editButton.setSelected(true);
+            editButton.setText("EDIT");
+            if (evt.getPublicId() != null) {
+                editFullyQualifiedNameController.setConceptAndPopulateForm(evt.getPublicId());
+            }else {
+                editFullyQualifiedNameController.setConceptAndPopulateForm(evt.getDescrName());
             }
         };
         eventBus.subscribe(conceptTopic, EditConceptFullyQualifiedNameEvent.class, editConceptFullyQualifiedNameEventSubscriber);
@@ -324,11 +371,38 @@ public class PropertiesController implements Serializable {
 
         // when opening the properties panel the default toggle to view is the history tab
         propsPanelOpen = evt -> {
-            historyButton.setSelected(true);
-            contentBorderPane.setCenter(historyTabsBorderPane);
+            if (contentBorderPane.getCenter() == null) {
+                historyButton.setSelected(true);
+                contentBorderPane.setCenter(historyTabsBorderPane);
+            }
         };
         eventBus.subscribe(conceptTopic, OpenPropertiesPanelEvent.class, propsPanelOpen);
 
+        // -- add stamp
+        addStampSubscriber = evt -> {
+            if (evt.getEventType() == ADD_STAMP) {
+                stampJFXNode.controller().init(stampAddSubmitFormViewModel);
+                this.stampAddSubmitFormViewModel.update(entityFacade, conceptTopic, viewProperties);
+
+                contentBorderPane.setCenter(stampJFXNode.node());
+                editButton.setSelected(true);
+            }
+        };
+
+        eventBus.subscribe(conceptTopic, StampEvent.class, addStampSubscriber);
+
+        // -- create stamp
+        createStampSubscriber = evt -> {
+            if (evt.getEventType() == CREATE_STAMP) {
+                stampJFXNode.controller().init(stampCreateFormViewModel);
+                this.stampCreateFormViewModel.update(entityFacade, conceptTopic, viewProperties);
+
+                contentBorderPane.setCenter(stampJFXNode.node());
+                editButton.setSelected(true);
+            }
+        };
+
+        eventBus.subscribe(conceptTopic, StampEvent.class, createStampSubscriber);
     }
 
     public ViewProperties getViewProperties() {
@@ -353,6 +427,43 @@ public class PropertiesController implements Serializable {
         }
     }
 
+    public String selectedView() {
+        Toggle tab = propertyToggleButtonGroup.getSelectedToggle();
+        if (editButton.equals(tab)) {
+            return "EDIT";
+        } else if (hierarchyButton.equals(tab)) {
+            return "HIERARCHY";
+        } else if (historyButton.equals(tab)) {
+            return "HISTORY";
+        } else if (commentsButton.equals(tab)) {
+            return "COMMENTS";
+        } else {
+            return "NONE";
+        }
+    };
+
+    public void restoreSelectedView(String selectedView) {
+        LOG.info("restore selected concept view with " + selectedView);
+        switch (selectedView) {
+            case "EDIT" -> {
+                editButton.setSelected(true);
+                contentBorderPane.setCenter(editBorderPane);
+            }
+            case "HIERARCHY" -> {
+                hierarchyButton.setSelected(true);
+                contentBorderPane.setCenter(hierarchyTabBorderPane);
+            }
+            case "HISTORY" -> {
+                historyButton.setSelected(true);
+                contentBorderPane.setCenter(historyTabsBorderPane);
+            }
+            case "COMMENTS" -> {
+                //commentsButton.setSelected(true); // TODO
+                contentBorderPane.setCenter(commentsPane);
+            }
+        }
+    }
+
     public void updateModel(final ViewProperties viewProperties, EntityFacade entityFacade){
         this.viewProperties = viewProperties;
         this.entityFacade = entityFacade;
@@ -369,6 +480,12 @@ public class PropertiesController implements Serializable {
 
         // Create a new DescrNameViewModel for the addfqncontroller.
         this.addFullyQualifiedNameController.updateModel(viewProperties);
+
+        if (editMode && stampAddSubmitFormViewModel != null) {
+            this.stampAddSubmitFormViewModel.update(entityFacade, conceptTopic, viewProperties);
+        } else if (!editMode && stampCreateFormViewModel != null) {
+            this.stampCreateFormViewModel.update(entityFacade, conceptTopic, viewProperties);
+        }
     }
 
     public void updateView() {
@@ -420,5 +537,21 @@ public class PropertiesController implements Serializable {
      */
     public FlowPane getPropertiesTabsPane() {
         return propertiesTabsPane;
+    }
+
+    public void setHasOtherName(boolean value) {
+        hasOtherNames = value;
+    }
+
+    public void setEditMode(boolean editMode) {
+        this.editMode = editMode;
+    }
+
+    public StampFormViewModelBase getStampFormViewModel() {
+        if (editMode) {
+            return stampAddSubmitFormViewModel;
+        } else {
+            return stampCreateFormViewModel;
+        }
     }
 }

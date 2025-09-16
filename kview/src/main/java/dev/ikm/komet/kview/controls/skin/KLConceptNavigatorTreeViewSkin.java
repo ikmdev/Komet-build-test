@@ -1,6 +1,11 @@
 package dev.ikm.komet.kview.controls.skin;
 
 import dev.ikm.komet.framework.dnd.KometClipboard;
+import dev.ikm.tinkar.common.service.TinkExecutor;
+import dev.ikm.tinkar.events.EvtBus;
+import dev.ikm.tinkar.events.EvtBusFactory;
+import dev.ikm.tinkar.events.Subscriber;
+import dev.ikm.komet.framework.events.appevents.RefreshCalculatorCacheEvent;
 import dev.ikm.komet.kview.controls.ConceptNavigatorTreeItem;
 import dev.ikm.komet.kview.controls.ConceptNavigatorUtils;
 import dev.ikm.komet.kview.controls.ConceptTile;
@@ -9,7 +14,10 @@ import dev.ikm.komet.kview.controls.KLConceptNavigatorControl;
 import dev.ikm.komet.kview.controls.KLConceptNavigatorTreeCell;
 import dev.ikm.komet.kview.controls.MultipleSelectionContextMenu;
 import dev.ikm.komet.kview.controls.SingleSelectionContextMenu;
+import dev.ikm.tinkar.common.flow.FlowSubscriber;
+import dev.ikm.tinkar.entity.Entity;
 import dev.ikm.tinkar.terms.ConceptFacade;
+import dev.ikm.tinkar.terms.EntityFacade;
 import dev.ikm.tinkar.terms.ProxyFactory;
 import javafx.application.Platform;
 import javafx.beans.InvalidationListener;
@@ -19,6 +27,7 @@ import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.ReadOnlyBooleanProperty;
 import javafx.beans.property.ReadOnlyBooleanWrapper;
 import javafx.beans.property.SimpleBooleanProperty;
+import javafx.beans.property.SimpleObjectProperty;
 import javafx.collections.ListChangeListener;
 import javafx.collections.ObservableList;
 import javafx.css.PseudoClass;
@@ -61,9 +70,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
+import static dev.ikm.tinkar.events.FrameworkTopics.CALCULATOR_CACHE_TOPIC;
 import static dev.ikm.komet.kview.controls.ConceptNavigatorTreeItem.STATE;
 import static dev.ikm.komet.kview.controls.ConceptNavigatorTreeItem.PS_STATE;
 
@@ -106,7 +119,21 @@ public class KLConceptNavigatorTreeViewSkin extends TreeViewSkin<ConceptFacade> 
     private MultipleSelectionContextMenu multipleSelectionContextMenu;
     private SingleSelectionContextMenu singleSelectionContextMenu;
     private boolean isScrollBarDragging;
-    private final BooleanProperty highlighted = new SimpleBooleanProperty();
+    private final BooleanProperty highlighted = new SimpleBooleanProperty() {
+        @Override
+        protected void invalidated() {
+            // install/uninstall event filter to the scene that holds the control
+            Scene scene = treeView.getScene();
+            if (scene != null) {
+                scene.removeEventFilter(MouseEvent.MOUSE_PRESSED, eventFilter);
+                if (get()) {
+                    scene.addEventFilter(MouseEvent.MOUSE_PRESSED, eventFilter);
+                }
+            }
+        }
+    };
+    private final ModifiedEntitySubscriber modifiedEntitySubscriber;
+    private final EventHandler<MouseEvent> eventFilter;
 
     /**
      * <p>Creates a {@link KLConceptNavigatorTreeViewSkin} instance.
@@ -115,6 +142,7 @@ public class KLConceptNavigatorTreeViewSkin extends TreeViewSkin<ConceptFacade> 
      * <p>Installs the listener for item selection by clicking.</p>
      * <p>Installs the event filters for rendering the dragging box and for item selection by dragging.</p>
      * <p>Installs the context menus.</p>
+     *
      * @param treeView The control that this skin should be installed onto
      */
     public KLConceptNavigatorTreeViewSkin(KLConceptNavigatorControl treeView) {
@@ -276,6 +304,15 @@ public class KLConceptNavigatorTreeViewSkin extends TreeViewSkin<ConceptFacade> 
             }
             e.consume();
         });
+
+        modifiedEntitySubscriber = new ModifiedEntitySubscriber();
+        Entity.provider().addSubscriberWithWeakReference(modifiedEntitySubscriber.getFlowSubscriber());
+
+        // Clicking anywhere, unhighlights any item from the treeView
+        eventFilter = _ -> {
+            treeView.unhighlightConceptsWithDelay();
+            highlighted.set(false);
+        };
     }
 
     /**
@@ -292,12 +329,15 @@ public class KLConceptNavigatorTreeViewSkin extends TreeViewSkin<ConceptFacade> 
             }
         }
     };
+
     public final ReadOnlyBooleanProperty multipleSelectionByBoundingBoxProperty() {
         return multipleSelectionByBoundingBoxProperty.getReadOnlyProperty();
     }
+
     public final boolean isMultipleSelectionByBoundingBox() {
-       return multipleSelectionByBoundingBoxProperty.get();
+        return multipleSelectionByBoundingBoxProperty.get();
     }
+
     private void setMultipleSelectionByBoundingBox(boolean b) {
         multipleSelectionByBoundingBoxProperty.set(b);
     }
@@ -314,12 +354,15 @@ public class KLConceptNavigatorTreeViewSkin extends TreeViewSkin<ConceptFacade> 
             }
         }
     };
+
     public final ReadOnlyBooleanProperty multipleSelectionByClickingProperty() {
         return multipleSelectionByClickingProperty.getReadOnlyProperty();
     }
+
     public final boolean isMultipleSelectionByClicking() {
-       return multipleSelectionByClickingProperty.get();
+        return multipleSelectionByClickingProperty.get();
     }
+
     private void setMultipleSelectionByClicking(boolean value) {
         multipleSelectionByClickingProperty.set(value);
     }
@@ -329,9 +372,11 @@ public class KLConceptNavigatorTreeViewSkin extends TreeViewSkin<ConceptFacade> 
      * the dragging box, in case the drag event will be taken care directly by the tile itself.
      */
     private boolean draggingAllowed = true;
+
     public final boolean isDraggingAllowed() {
-       return draggingAllowed;
+        return draggingAllowed;
     }
+
     public final void setDraggingAllowed(boolean value) {
         draggingAllowed = value;
     }
@@ -340,6 +385,7 @@ public class KLConceptNavigatorTreeViewSkin extends TreeViewSkin<ConceptFacade> 
      * <p>Whenever the selected item in the tree view changes, this method allows for updating
      * the selected state of this item and all its ancestors.
      * </p>
+     *
      * @param child the selected {@link ConceptNavigatorTreeItem} for which its ancestors
      *              have to be selected too.
      * @see STATE#SELECTED
@@ -352,6 +398,7 @@ public class KLConceptNavigatorTreeViewSkin extends TreeViewSkin<ConceptFacade> 
      * <p>Whenever the long-hovered item in the tree view changes, this method allows for updating
      * the long-hovered state of this item and all its ancestors.
      * </p>
+     *
      * @param child the long-hovered {@link ConceptNavigatorTreeItem} for which its ancestors
      *              have to be long-hovered too.
      * @see STATE#LONG_HOVER
@@ -364,6 +411,7 @@ public class KLConceptNavigatorTreeViewSkin extends TreeViewSkin<ConceptFacade> 
      * <p>Whenever the selected item in the tree view changes, or there is no selection, this method
      * removes the selected state of this item and all its siblings and ancestors.
      * </p>
+     *
      * @see STATE#SELECTED
      */
     public void unselectAllItems() {
@@ -374,20 +422,24 @@ public class KLConceptNavigatorTreeViewSkin extends TreeViewSkin<ConceptFacade> 
      * <p>Whenever the long-hovered item in the tree view changes, or there is no long-hovered item, this method
      * removes the long-hovered state of this item and all its siblings and ancestors.
      * </p>
+     *
      * @see STATE#LONG_HOVER
      */
     public void unhoverAllItems() {
         unmarkAllItems(STATE.LONG_HOVER);
     }
 
-    /** {@inheritDoc} **/
-     @Override
+    /**
+     * {@inheritDoc}
+     **/
+    @Override
     protected VirtualFlow<TreeCell<ConceptFacade>> createVirtualFlow() {
         virtualFlow = new ConceptNavigatorVirtualFlow();
         return virtualFlow;
     }
 
-    /** {@inheritDoc}
+    /**
+     * {@inheritDoc}
      * Overridden to take care of the floating header, if visible.
      */
     @Override
@@ -403,6 +455,7 @@ public class KLConceptNavigatorTreeViewSkin extends TreeViewSkin<ConceptFacade> 
 
     /**
      * Gets the group node of the virtual flow, which contains the actual {@link KLConceptNavigatorTreeCell cells}.
+     *
      * @return the {@link Group} node with cells.
      */
     private Group getSheet() {
@@ -415,6 +468,7 @@ public class KLConceptNavigatorTreeViewSkin extends TreeViewSkin<ConceptFacade> 
     /**
      * <p>Gets a {@link Stream<KLConceptNavigatorTreeCell>} of the cells found in the virtual flow.
      * </p>
+     *
      * @return a {@link Stream<KLConceptNavigatorTreeCell>}
      */
     private Stream<KLConceptNavigatorTreeCell> getConceptNavigatorTreeCellStream() {
@@ -428,6 +482,7 @@ public class KLConceptNavigatorTreeViewSkin extends TreeViewSkin<ConceptFacade> 
      * and iterate over the whole tree, from root to bottom, to reset the range of bits related
      * to the passed {@link STATE}.
      * </p>
+     *
      * @param state the selected or long-hovered {@link STATE}
      */
     private void unmarkAllItems(STATE state) {
@@ -443,6 +498,7 @@ public class KLConceptNavigatorTreeViewSkin extends TreeViewSkin<ConceptFacade> 
      * <p>Traverse the tree view, starting from the given {@link ConceptNavigatorTreeItem}, up to its siblings
      * and ancestors, and for each item, set the bits of bitSet that relate to the passed {@link STATE}.
      * </p>
+     *
      * @param child the starting {@link ConceptNavigatorTreeItem}
      * @param state the selected or long-hovered {@link STATE}
      */
@@ -490,7 +546,8 @@ public class KLConceptNavigatorTreeViewSkin extends TreeViewSkin<ConceptFacade> 
      * from top to bottom, setting the bits of bitSet that relate to the passed {@link STATE} at a
      * given indentation level.
      * </p>
-     * @param item a {@link ConceptNavigatorTreeItem}
+     *
+     * @param item  a {@link ConceptNavigatorTreeItem}
      * @param state the selected or long-hovered {@link STATE}
      * @param level the indentation level
      */
@@ -507,6 +564,7 @@ public class KLConceptNavigatorTreeViewSkin extends TreeViewSkin<ConceptFacade> 
      * {@link ConceptNavigatorTreeItem}, if found, to force a call to {@link KLConceptNavigatorTreeCell updateItem}
      * in the next layout pass.
      * </p>
+     *
      * @param treeItem a {@link ConceptNavigatorTreeItem}
      */
     private void markCellDirty(ConceptNavigatorTreeItem treeItem) {
@@ -517,6 +575,7 @@ public class KLConceptNavigatorTreeViewSkin extends TreeViewSkin<ConceptFacade> 
      * <p>Finds the {@link KLConceptNavigatorTreeCell} for the passed {@link ConceptNavigatorTreeItem},
      * within the list of current cells in the virtual flow, if any.
      * </p>
+     *
      * @param treeItem a {@link ConceptNavigatorTreeItem}
      * @return an optional of {@link KLConceptNavigatorTreeCell}
      */
@@ -544,8 +603,10 @@ public class KLConceptNavigatorTreeViewSkin extends TreeViewSkin<ConceptFacade> 
             return;
         }
         if (!draggingBox.getElements().isEmpty()) {
-            xMin = Double.MAX_VALUE; yMin = Double.MAX_VALUE;
-            xMax = Double.MIN_VALUE; yMax = Double.MIN_VALUE;
+            xMin = Double.MAX_VALUE;
+            yMin = Double.MAX_VALUE;
+            xMax = Double.MIN_VALUE;
+            yMax = Double.MIN_VALUE;
             getConceptNavigatorTreeCellStream()
                     .filter(cell -> cell.getGraphic() != null)
                     .forEach(cell -> {
@@ -595,6 +656,7 @@ public class KLConceptNavigatorTreeViewSkin extends TreeViewSkin<ConceptFacade> 
      * selection of {@link ConceptTile}. But when the selection is done via clicking, since this can be discontinuous,
      * the cached snapshot of each item is added to an {@link ImageView}, and those are grouped into a {@link VBox},
      * from which the snapshot is finally taken.</p>
+     *
      * @return a {@link WritableImage} of the selected items
      */
     private WritableImage createSnapshot() {
@@ -627,6 +689,7 @@ public class KLConceptNavigatorTreeViewSkin extends TreeViewSkin<ConceptFacade> 
      * to set an {@link EventHandler<ActionEvent>} for its menu items, based on the
      * {@link KLConceptNavigatorControl#onActionProperty()}, if defined.
      * </p>
+     *
      * @param item a {@link ConceptNavigatorTreeItem}
      */
     private void setupSingleContextMenu(ConceptNavigatorTreeItem item) {
@@ -637,7 +700,8 @@ public class KLConceptNavigatorTreeViewSkin extends TreeViewSkin<ConceptFacade> 
             for (KLConceptNavigatorControl.CONTEXT_MENU_ACTION action : KLConceptNavigatorControl.CONTEXT_MENU_ACTION.getSingleActions()) {
                 Consumer<ConceptFacade> consumer = treeView.getOnAction().apply(action);
                 switch (action) {
-                    case SHOW_RELATED_CONCEPTS -> singleSelectionContextMenu.setRelatedByMenuItemAction(item.getRelatedConcepts(), consumer);
+                    case SHOW_RELATED_CONCEPTS ->
+                            singleSelectionContextMenu.setRelatedByMenuItemAction(item.getRelatedConcepts(), consumer);
                     case OPEN_IN_WORKSPACE -> singleSelectionContextMenu.setWorkspaceMenuItemAction(_ -> {
                         if (consumer != null) {
                             consumer.accept(item.getValue());
@@ -655,6 +719,7 @@ public class KLConceptNavigatorTreeViewSkin extends TreeViewSkin<ConceptFacade> 
      * to set an {@link EventHandler<ActionEvent>} for its different menu items, based on the
      * {@link KLConceptNavigatorControl#onActionProperty()}, if defined.
      * </p>
+     *
      * @param items a {@link List<ConceptFacade>}
      */
     private void setupMultipleContextMenu(List<ConceptFacade> items) {
@@ -671,11 +736,15 @@ public class KLConceptNavigatorTreeViewSkin extends TreeViewSkin<ConceptFacade> 
                     resetSelection();
                 };
                 switch (action) {
-                    case POPULATE_SELECTION -> multipleSelectionContextMenu.setPopulateMenuItemAction(actionEventEventHandler);
-                    case SEND_TO_JOURNAL -> multipleSelectionContextMenu.setJournalMenuItemAction(actionEventEventHandler);
-                    case SEND_TO_CHAPTER -> multipleSelectionContextMenu.setChapterMenuItemAction(actionEventEventHandler);
+                    case POPULATE_SELECTION ->
+                            multipleSelectionContextMenu.setPopulateMenuItemAction(actionEventEventHandler);
+                    case SEND_TO_JOURNAL ->
+                            multipleSelectionContextMenu.setJournalMenuItemAction(actionEventEventHandler);
+                    case SEND_TO_CHAPTER ->
+                            multipleSelectionContextMenu.setChapterMenuItemAction(actionEventEventHandler);
                     case COPY -> multipleSelectionContextMenu.setCopyMenuItemAction(actionEventEventHandler);
-                    case SAVE_TO_FAVORITES -> multipleSelectionContextMenu.setSaveMenuItemAction(actionEventEventHandler);
+                    case SAVE_TO_FAVORITES ->
+                            multipleSelectionContextMenu.setSaveMenuItemAction(actionEventEventHandler);
                     default -> throw new IllegalStateException("Unexpected value: " + action);
                 }
             }
@@ -695,6 +764,7 @@ public class KLConceptNavigatorTreeViewSkin extends TreeViewSkin<ConceptFacade> 
     /**
      * <p>Expands and highlights the concept in the treeView, matching both its nid and parent nid.
      * </p>
+     *
      * @param conceptItem a {@link dev.ikm.komet.kview.controls.InvertedTree.ConceptItem}
      */
     public void expandAndHighlightConcept(InvertedTree.ConceptItem conceptItem) {
@@ -704,64 +774,180 @@ public class KLConceptNavigatorTreeViewSkin extends TreeViewSkin<ConceptFacade> 
     /**
      * <p>Expands and selects the concept in the treeView, matching both its nid and parent nid.
      * </p>
+     *
      * @param conceptItem a {@link dev.ikm.komet.kview.controls.InvertedTree.ConceptItem}
      */
     public void expandAndSelectConcept(InvertedTree.ConceptItem conceptItem) {
         expandConcept(conceptItem, false);
     }
 
+    private final AtomicInteger counter = new AtomicInteger();
+    private boolean lock;
+
     private void expandConcept(InvertedTree.ConceptItem conceptItem, boolean highlight) {
+        if (lock) {
+            // wait until running expansion ends before starting a new one
+            return;
+        }
+
         ConceptNavigatorUtils.resetConceptNavigator(treeView);
-
         List<InvertedTree.ConceptItem> lineage = ConceptNavigatorUtils.findShorterLineage(conceptItem, treeView.getNavigator());
-        ConceptNavigatorTreeItem parent = (ConceptNavigatorTreeItem) treeView.getRoot();
-        for (int i = 0; i < lineage.size(); i++) {
-            int parentNid = lineage.get(i).nid();
-            int nid = lineage.get(i).childNid();
-            ConceptNavigatorTreeItem item = (ConceptNavigatorTreeItem) parent.getChildren().stream()
-                    .filter(c -> c.getValue().nid() == nid)
-                    .findFirst()
-                    .orElse(ConceptNavigatorHelper.getConceptNavigatorTreeItem(treeView, nid, parentNid));
-            item.setExpanded(true);
-            parent = item;
-            if (i == lineage.size() - 2) { // select and scroll to parent, so it stays visible on top of the treeView
-                treeView.getSelectionModel().select(item);
-                treeView.scrollTo(treeView.getSelectionModel().getSelectedIndex());
-                treeView.getSelectionModel().clearSelection();
-            } else if (i == lineage.size() - 1) { // then, select, and highlight item
-                treeView.getSelectionModel().select(item);
-                int index = treeView.getSelectionModel().getSelectedIndex();
-                Platform.runLater(() -> {
-                    // check if the item is visible
-                    if (getCellForTreeItem(item).isEmpty()) {
-                        // else scroll to it (in case of a long list of previous siblings)
-                        treeView.scrollTo(index);
-                    }
-                });
-                item.setViewLineage(false);
-                if (highlight) {
-                    treeView.getSelectionModel().clearSelection();
+        TinkExecutor.threadPool().execute(() -> {
+            lock = true;
+            counter.set(0);
+            expandAncestor(lineage, (ConceptNavigatorTreeItem) treeView.getRoot(), highlight);
+        });
+    }
 
-                    // Clicking anywhere, unhighlights the item
-                    EventHandler<MouseEvent> eventFilter = _ -> {
-                        treeView.unhighlightConceptsWithDelay();
-                        highlighted.set(false);
-                    };
-                    // install/uninstall event filter to the scene that holds the control
-                    highlighted.subscribe((_, v) -> {
-                        Scene scene = treeView.getScene();
-                        if (scene != null) {
-                            if (v) {
-                                scene.addEventFilter(MouseEvent.MOUSE_PRESSED, eventFilter);
-                            } else {
-                                scene.removeEventFilter(MouseEvent.MOUSE_PRESSED, eventFilter);
-                            }
-                        }
+    private void expandAncestor(List<InvertedTree.ConceptItem> lineage, ConceptNavigatorTreeItem parent, boolean highlight) {
+        int i = counter.get();
+        ConceptNavigatorTreeItem item = getItemAndExpand(lineage, parent, i);
+        if (item != null) {
+            if (i < lineage.size() - 1) {
+                processAncestor(lineage, highlight, i, item);
+            } else {
+                processItem(item, highlight);
+            }
+        } else {
+            lock = false;
+        }
+    }
+
+    private void processAncestor(List<InvertedTree.ConceptItem> lineage, boolean highlight, int i, ConceptNavigatorTreeItem item) {
+        if (item.getChildren() != null) {
+            // direct parent of item
+            if (i == lineage.size() - 2) { // select and scroll to parent, so it stays visible on top of the treeView
+                Platform.runLater(() -> {
+                    treeView.getSelectionModel().select(item);
+                    treeView.scrollTo(treeView.getSelectionModel().getSelectedIndex());
+                    treeView.getSelectionModel().clearSelection();
+                });
+            }
+
+            // run next iteration
+            counter.getAndIncrement();
+            expandAncestor(lineage, item, highlight);
+        } else {
+            lock = false;
+        }
+    }
+
+    private void processItem(ConceptNavigatorTreeItem item, boolean highlight) {
+        // finally, we reached the item, select or highlight it
+        Platform.runLater(() -> {
+            treeView.getSelectionModel().select(item);
+            int index = treeView.getSelectionModel().getSelectedIndex();
+            // check if the item is visible
+            if (getCellForTreeItem(item).isEmpty()) {
+                // else scroll to it (in case of a long list of previous siblings)
+                treeView.scrollTo(index);
+            }
+            item.setViewLineage(false);
+            if (highlight) {
+                treeView.getSelectionModel().clearSelection();
+                item.setHighlighted(true);
+                highlighted.set(true);
+            }
+            lock = false;
+        });
+    }
+
+    private ConceptNavigatorTreeItem getItemAndExpand(List<InvertedTree.ConceptItem> lineage, ConceptNavigatorTreeItem parent, int i) {
+        int parentNid = lineage.get(i).nid();
+        int nid = lineage.get(i).childNid();
+        ConceptNavigatorTreeItem item = (ConceptNavigatorTreeItem) parent.getChildren().stream()
+                .filter(c -> c.getValue().nid() == nid)
+                .findFirst()
+                .orElse(ConceptNavigatorHelper.getConceptNavigatorTreeItem(treeView, nid, parentNid));
+        if (item == null) {
+            lock = false;
+            return null;
+        }
+        if (item.getChildren().isEmpty()) {
+            try {
+                Future<Boolean> booleanFuture = ConceptNavigatorHelper.fetchChildrenTask(treeView, item);
+                if (booleanFuture != null) {
+                    booleanFuture.get();
+                    // LOG error
+                }
+            } catch (InterruptedException | ExecutionException e) {
+                throw new RuntimeException(e);
+            }
+        }
+        Platform.runLater(() -> item.setExpanded(true));
+        return item;
+    }
+
+    /**
+     * <p>In combination with {@link FlowSubscriber}, tracks the changes of an entity.
+     * Whenever a concept changes, takes its {@link InvertedTree}
+     * before and after the Reasoner applies the changes, and looks for changes in the lineages of the concept.
+     * </p>
+     * <p>If any change is found, it takes the {@link dev.ikm.komet.kview.controls.InvertedTree.ConceptItem}
+     * that changed and expands the {@link KLConceptNavigatorControl} and selects the related concept.
+     * </p>
+     */
+    private class ModifiedEntitySubscriber {
+
+        private final FlowSubscriber<Integer> flowSubscriber;
+        private final EvtBus eventBus = EvtBusFactory.getDefaultEvtBus();
+        private final Subscriber<RefreshCalculatorCacheEvent> refreshEventSubscriber;
+
+        private final SimpleObjectProperty<EntityFacade> modifiedEntityProperty = new SimpleObjectProperty<>() {
+
+            InvertedTree oldInvertedTree;
+
+            @Override
+            protected void invalidated() {
+                EntityFacade entityFacade = get();
+                if (entityFacade != null) {
+                    InvertedTree newInvertedTree = ConceptNavigatorUtils.buildInvertedTree(entityFacade.nid(), treeView.getNavigator());
+                    newInvertedTree.compareTo(oldInvertedTree).ifPresent(item -> {
+                        expandConcept(item, false);
+                        setValue(null);
                     });
-                    item.setHighlighted(true);
-                    highlighted.set(true);
+                    oldInvertedTree = newInvertedTree;
+                } else {
+                    oldInvertedTree = null;
                 }
             }
+        };
+
+        ModifiedEntitySubscriber() {
+            // refresh Concept Navigator after change in entity ancestors, keeping selection in the concept that changed,
+            // if possible
+            flowSubscriber = new FlowSubscriber<>(nid -> {
+
+                try {
+                    if (modifiedEntityProperty.get() == null && Entity.provider().getEntityFast(nid) instanceof ConceptFacade cf) {
+                        modifiedEntityProperty.set(cf);
+                    }
+                } catch (Exception e) {
+
+                }
+
+                if (modifiedEntityProperty.get() != null && modifiedEntityProperty.get().nid() == nid) {
+                    Platform.runLater(() -> modifiedEntityProperty.set(Entity.provider().getEntityFast(nid)));
+                }
+            });
+
+            // Refresh Concept Navigator after import operation, keeping current selection if possible
+            refreshEventSubscriber = _ -> {
+                ConceptNavigatorTreeItem selectedItem = (ConceptNavigatorTreeItem) treeView.getSelectionModel().getSelectedItem();
+                if (selectedItem != null) {
+                    Platform.runLater(() ->
+                            expandConcept(new InvertedTree.ConceptItem(-1,
+                                    selectedItem.getValue().nid(), selectedItem.getValue().description()), false));
+                } else {
+                    ConceptNavigatorUtils.resetConceptNavigator(treeView);
+                }
+            };
+
+            eventBus.subscribe(CALCULATOR_CACHE_TOPIC, RefreshCalculatorCacheEvent.class, refreshEventSubscriber);
+        }
+
+        FlowSubscriber<Integer> getFlowSubscriber() {
+            return flowSubscriber;
         }
     }
 }
