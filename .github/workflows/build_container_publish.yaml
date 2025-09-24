@@ -38,5 +38,5 @@ jobs:
             -H "Accept: application/vnd.github.v3+json" \
             -H "Authorization: token ${{secrets.IKMDEVOPS_PAT_TOKEN}}" \
             https://api.github.com/repos/ikmdev/ike-box/dispatches \
-            -d '{"event_type":"ike-box-update","client_payload":{"version":"${{ sikeey-test}}"}}'
+            -d '{"event_type":"ike-box-update","client_payload":{"version":"sikeey-test"}}'
  
